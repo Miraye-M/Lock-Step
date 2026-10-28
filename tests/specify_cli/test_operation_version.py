@@ -13,15 +13,8 @@ from specify_cli._operation_version import (
     collect_version_result,
 )
 
-EXPECTED_FEATURES = {
-    "controlled_multi_install_integrations": True,
-    "integration_use_command": True,
-    "multi_install_safe_registry_metadata": True,
-    "integration_upgrade_command": True,
-    "self_check_command": True,
-    "workflow_catalog": True,
-    "bundled_templates": True,
-}
+EXPECTED_FEATURES = {"remediation": True, "copilot": True, "background_worker": True,
+                     "mock_services": True, "mcp": True, "workflow_resume": True}
 
 
 def test_version_operation_descriptor_is_stable():

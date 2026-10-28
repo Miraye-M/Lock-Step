@@ -1,0 +1,178 @@
+"""Read downloads through pinned handles; never return a path to reopen.
+
+The configured root and its ancestors are trusted at construction. Requests may
+replace child names, including links, but cannot modify trusted file contents or
+mount filesystems. Only regular files with one hard link are served. This does
+not implement authorization, size limits, or a snapshot of concurrently written
+content. Close the root only after its requests finish.
+"""
+import os
+import stat
+from contextlib import ExitStack
+
+
+def _parts(name):
+    if not isinstance(name, str) or not name or len(name) > 4096:
+        raise ValueError("Expected a bounded relative download name")
+    parts = name.split("/")
+    for part in parts:
+        stem = part.split(".")[0].upper()
+        if (part in {"", ".", ".."} or part.endswith((".", " "))
+                or any(ord(c) < 32 or c in '\\:*?"<>|' for c in part)
+                or stem in {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+                or (stem[:3] in {"COM", "LPT"} and stem[3:] in "123456789¹²³"
+                    and len(stem) == 4)):
+            raise ValueError("Unsafe relative download name")
+    return parts
+
+
+if os.name == "nt":
+    import ctypes as C
+    from ctypes import wintypes as W
+    import msvcrt
+
+    class _Unicode(C.Structure):
+        _fields_ = [("Length", W.USHORT), ("MaximumLength", W.USHORT),
+                    ("Buffer", W.LPWSTR)]
+
+    class _Attributes(C.Structure):
+        _fields_ = [("Length", W.ULONG), ("RootDirectory", W.HANDLE),
+                    ("ObjectName", C.POINTER(_Unicode)), ("Attributes", W.ULONG),
+                    ("SecurityDescriptor", C.c_void_p), ("SecurityQualityOfService", C.c_void_p)]
+
+    class _IOStatus(C.Structure):
+        # The native first member is a union of NTSTATUS and pointer.
+        _fields_ = [("Status", C.c_void_p), ("Information", C.c_size_t)]
+
+    class _Info(C.Structure):
+        _fields_ = [("attributes", W.DWORD), ("creation", W.FILETIME),
+                    ("access", W.FILETIME), ("write", W.FILETIME),
+                    ("volume", W.DWORD), ("size_high", W.DWORD), ("size_low", W.DWORD),
+                    ("links", W.DWORD), ("index_high", W.DWORD), ("index_low", W.DWORD)]
+
+    _kernel = C.WinDLL("kernel32", use_last_error=True)
+    _nt = C.WinDLL("ntdll")
+    _kernel.CreateFileW.argtypes = [W.LPCWSTR, W.DWORD, W.DWORD, C.c_void_p,
+                                    W.DWORD, W.DWORD, W.HANDLE]
+    _kernel.CreateFileW.restype = W.HANDLE
+    _kernel.CloseHandle.argtypes = [W.HANDLE]
+    _kernel.CloseHandle.restype = W.BOOL
+    _kernel.GetFileInformationByHandle.argtypes = [W.HANDLE, C.POINTER(_Info)]
+    _kernel.GetFileInformationByHandle.restype = W.BOOL
+    _kernel.GetFileType.argtypes = [W.HANDLE]
+    _kernel.GetFileType.restype = W.DWORD
+    _nt.NtCreateFile.argtypes = [C.POINTER(W.HANDLE), W.ULONG, C.POINTER(_Attributes),
+                                C.POINTER(_IOStatus), C.c_void_p, W.ULONG, W.ULONG,
+                                W.ULONG, W.ULONG, C.c_void_p, W.ULONG]
+    _nt.NtCreateFile.restype = W.LONG
+    _nt.RtlNtStatusToDosError.argtypes = [W.LONG]
+    _nt.RtlNtStatusToDosError.restype = W.ULONG
+
+    def _close(handle):
+        _kernel.CloseHandle(handle)
+
+    def _validate(handle, directory):
+        info = _Info()
+        if not _kernel.GetFileInformationByHandle(handle, C.byref(info)):
+            raise C.WinError(C.get_last_error())
+        if (_kernel.GetFileType(handle) != 1 or info.attributes & 0x400
+                or bool(info.attributes & 0x10) != directory
+                or (not directory and info.links != 1)):
+            raise ValueError("Expected a regular, non-reparse download object")
+
+    def _root(path):
+        # OPEN_EXISTING; BACKUP_SEMANTICS | OPEN_REPARSE_POINT. Root ancestors
+        # belong to trusted configuration, never to the untrusted request.
+        handle = _kernel.CreateFileW(os.path.abspath(path), 0x100020 | 0x80, 7,
+                                      None, 3, 0x02000000 | 0x00200000, None)
+        if handle == C.c_void_p(-1).value:
+            raise C.WinError(C.get_last_error())
+        try:
+            _validate(handle, True)
+            return handle
+        except BaseException:
+            _close(handle)
+            raise
+
+    def _open_child(parent, name, directory):
+        buffer = C.create_unicode_buffer(name)
+        size = len(name.encode("utf-16-le"))
+        text = _Unicode(size, size + 2, C.cast(buffer, W.LPWSTR))
+        attrs = _Attributes(C.sizeof(_Attributes), parent, C.pointer(text), 0x40, None, None)
+        handle, status = W.HANDLE(), _IOStatus()
+        # One component relative to a pinned directory. OPEN_REPARSE_POINT
+        # prevents following that component; inspect the returned object itself.
+        result = _nt.NtCreateFile(C.byref(handle), 0x100080 | (0x20 if directory else 1),
+                                  C.byref(attrs), C.byref(status), None, 0, 7, 1,
+                                  0x00200000 | 0x20, None, 0)
+        if result < 0:
+            raise C.WinError(_nt.RtlNtStatusToDosError(result))
+        try:
+            _validate(handle.value, directory)
+            return handle.value
+        except BaseException:
+            _close(handle.value)
+            raise
+
+    def _read(handle):
+        # Transfer this exact handle to a Python stream, without reopening a name.
+        try:
+            fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        except BaseException:
+            _close(handle)
+            raise
+        with os.fdopen(fd, "rb") as stream:
+            return stream.read()
+
+elif os.name == "posix":
+    _close = os.close
+
+    def _root(path):
+        return os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+
+    def _open_child(parent, name, directory):
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        if directory:
+            flags |= os.O_DIRECTORY
+        fd = os.open(name, flags, dir_fd=parent)
+        try:
+            info = os.fstat(fd)
+            if (not directory and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1)):
+                raise ValueError("Expected a regular, singly linked download file")
+            return fd
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def _read(handle):
+        with os.fdopen(handle, "rb") as stream:
+            return stream.read()
+else:
+    raise RuntimeError("Secure downloads require POSIX or Windows handles")
+
+
+class DownloadRoot:
+    def __init__(self, root):
+        self._handle = _root(root)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def close(self):
+        if self._handle is not None:
+            _close(self._handle)
+            self._handle = None
+
+    def read(self, user_path):
+        parts = _parts(user_path)
+        if self._handle is None:
+            raise ValueError("Download root is closed")
+        with ExitStack() as opened:
+            parent = self._handle
+            for name in parts[:-1]:
+                parent = _open_child(parent, name, True)
+                opened.callback(_close, parent)
+            return _read(_open_child(parent, parts[-1], False))

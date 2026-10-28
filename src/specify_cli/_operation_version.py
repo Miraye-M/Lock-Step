@@ -57,15 +57,9 @@ VERSION_OPERATION = VersionOperationDescriptor(
 
 def _feature_capabilities() -> dict[str, bool]:
     """Return stable local CLI capability flags for humans and agents."""
-    return {
-        "controlled_multi_install_integrations": True,
-        "integration_use_command": True,
-        "multi_install_safe_registry_metadata": True,
-        "integration_upgrade_command": True,
-        "self_check_command": True,
-        "workflow_catalog": True,
-        "bundled_templates": True,
-    }
+    return {"remediation": True, "copilot": True, "background_worker": True,
+            "mock_services": True, "mcp": True, "workflow_resume": True}
+
 
 
 def _openssl_version() -> str | None:

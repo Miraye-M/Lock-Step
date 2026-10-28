@@ -1,16 +1,12 @@
 """Strict project policy and configuration bootstrap contracts."""
 
-import asyncio
 import json
 import os
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
-import typer
-from typer.testing import CliRunner
 
-from specify_cli import app
 from specify_cli.file_helper import FileHelper
 
 
@@ -107,149 +103,24 @@ def test_policy_root_alias_is_trusted(tmp_path, symlinks):
     assert policy_module().project_files(alias).allow_symlinks is True
 
 
-def test_project_commands_recheck_edits_and_render_json(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    config = tmp_path / ".specify/init-options.json"
-    config.parent.mkdir()
-    runner = CliRunner()
-    config.write_text('{"allow_symlinks": false}')
-    assert runner.invoke(app, ["extension", "list", "--json"]).exit_code == 0
-    config.write_text('{"allow_symlinks": "true"}')
-    result = runner.invoke(app, ["extension", "list", "--json"])
-    assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "boolean" in json.loads(result.stderr)["error"]
-    config.write_text('{"allow_symlinks": true}')
-    assert runner.invoke(app, ["extension", "list", "--json"]).exit_code == 0
 
 
-@pytest.mark.parametrize("args", [["--help"], ["--version"], ["version", "--json"], ["init", "--help"]])
-def test_projectless_commands_ignore_unrelated_invalid_policy(tmp_path, monkeypatch, args):
-    monkeypatch.chdir(tmp_path)
-    config = tmp_path / ".specify/init-options.json"
-    config.parent.mkdir()
-    config.write_text("{")
-    result = CliRunner().invoke(app, args)
-    assert "init-options.json" not in result.output
-    assert result.exit_code == 0
 
 
-@pytest.mark.parametrize("allowed", [False, True])
-def test_init_persists_policy_and_preserves_unrelated_options(tmp_path, monkeypatch, allowed):
-    monkeypatch.chdir(tmp_path)
-    config = tmp_path / ".specify/init-options.json"
-    config.parent.mkdir()
-    config.write_text('{"custom": "retained", "allow_symlinks": true}')
-    args = ["init", "--here", "--force", "--non-interactive", "--integration", "generic",
-            "--integration-options=--commands-dir .agent/commands", "--ignore-agent-tools"]
-    if allowed:
-        args.append("--allow-symlinks")
-    result = CliRunner().invoke(app, args)
-    assert result.exit_code == 0, result.output
-    options = json.loads(config.read_text())
-    assert options["allow_symlinks"] is allowed
-    assert options["custom"] == "retained"
 
 
-@pytest.mark.parametrize("args", [["--allow-symlinks"], ["extension", "list", "--allow-symlinks"], ["workflow", "run", "x", "--allow-symlinks"]])
-def test_option_is_init_only(args):
-    result = CliRunner().invoke(app, args)
-    assert result.exit_code == 2
-    assert "No such option" in result.output
 
 
-def test_init_rejects_policy_before_scaffolding(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    config = tmp_path / ".specify/init-options.json"
-    config.parent.mkdir()
-    config.write_text("{")
-    before = set(tmp_path.iterdir())
-    result = CliRunner().invoke(app, ["init", "--here", "--force", "--allow-symlinks", "--non-interactive"])
-    assert result.exit_code == 1
-    assert "init-options.json" in result.output
-    assert set(tmp_path.iterdir()) == before
 
 
-@pytest.mark.parametrize("args", [
-    ["extension", "list", "--json"], ["preset", "list", "--json"],
-    ["artifact", "list", "--json"], ["artifact", "info", "speckit.plan", "--json"],
-    ["integration", "status", "--json"],
-    ["workflow", "status", "--json"], ["workflow", "resume", "missing", "--json"],
-    ["workflow", "run", "missing", "--json"],
-    ["bundle", "list", "--json"], ["bundle", "search", "--offline", "--json"],
-    ["bundle", "info", "missing", "--offline", "--json"],
-])
-def test_policy_failures_use_json_error_surfaces(tmp_path, monkeypatch, args):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".specify").mkdir()
-    (tmp_path / ".specify/init-options.json").write_text("{")
-    result = CliRunner().invoke(app, args)
-    assert result.exit_code == 1, result.exception
-    assert result.stdout == ""
-    assert "init-options.json" in json.loads(result.stderr)["error"]
 
 
-def test_override_checks_selected_project_only(tmp_path, monkeypatch):
-    project = tmp_path / "member"
-    project.mkdir()
-    policy_module().save_project_options(project, {"allow_symlinks": True})
-    policy_module().save_project_options(tmp_path, {})
-    (tmp_path / ".specify/init-options.json").write_text("{")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", "member")
-    from specify_cli._project import resolve_specify_project_files
-
-    assert resolve_specify_project_files().root == project.resolve()
-    assert resolve_specify_project_files().allow_symlinks is True
-    assert CliRunner().invoke(app, ["extension", "list", "--json"]).exit_code == 0
-    (project / ".specify/init-options.json").write_text('{"allow_symlinks": null}')
-    result = CliRunner().invoke(app, ["extension", "list", "--json"])
-    assert result.exit_code == 1
-    assert "boolean" in json.loads(result.stderr)["error"]
 
 
-def test_no_new_ancestor_discovery(tmp_path, monkeypatch):
-    policy_module().save_project_options(tmp_path, {"allow_symlinks": True})
-    nested = tmp_path / "nested"
-    nested.mkdir()
-    monkeypatch.chdir(nested)
-    monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
-    result = CliRunner().invoke(app, ["extension", "list", "--json"])
-    assert result.exit_code == 1
-    assert "Not a Spec Kit project" in json.loads(result.stderr)["error"]
 
 
-def test_init_explicit_target_ignores_override_and_cwd_policy(tmp_path, monkeypatch):
-    policy_module().save_project_options(tmp_path, {})
-    (tmp_path / ".specify/init-options.json").write_text("{")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "nonexistent"))
-    result = CliRunner().invoke(app, [
-        "init", "nested/project", "--allow-symlinks", "--non-interactive",
-        "--integration", "generic", "--integration-options=--commands-dir .agent/commands",
-        "--ignore-agent-tools",
-    ])
-    assert result.exit_code == 0, result.output
-    assert policy_module().project_files(tmp_path / "nested/project").allow_symlinks is True
 
 
-def test_direct_workflow_preflights_policy_without_requiring_project(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    workflow = tmp_path / "local.yml"
-    workflow.write_text(
-        "workflow:\n  id: local\n  name: Local\n  version: 1.0.0\n"
-        "steps:\n  - id: done\n    type: shell\n    run: echo done\n"
-    )
-    policy_module().save_project_options(tmp_path, {})
-    (tmp_path / ".specify/init-options.json").write_text("{")
-    result = CliRunner().invoke(app, ["workflow", "run", str(workflow), "--json"])
-    assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "init-options.json" in json.loads(result.stderr)["error"]
-    (tmp_path / ".specify/init-options.json").unlink()
-    (tmp_path / ".specify").rmdir()
-    result = CliRunner().invoke(app, ["workflow", "run", str(workflow), "--json"])
-    assert result.exit_code == 0, result.output
 
 
 def test_configuration_write_preserves_permissions_inode_and_hardlinks(tmp_path):
@@ -274,52 +145,10 @@ def test_write_permission_errors_are_explicit(tmp_path, monkeypatch):
         policy_module().save_project_options(tmp_path, {"allow_symlinks": False})
 
 
-@pytest.mark.parametrize("command", [["bundle", "list", "--json"], ["bundle", "init"]])
-def test_bundle_resolved_project_does_not_ignore_corrupt_policy(tmp_path, monkeypatch, command):
-    policy_module().save_project_options(tmp_path, {})
-    (tmp_path / ".specify/init-options.json").write_text("{")
-    nested = tmp_path / "nested"
-    nested.mkdir()
-    monkeypatch.chdir(nested)
-    result = CliRunner().invoke(app, command)
-    assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "init-options.json" in result.stderr
 
 
-def test_integration_updates_preserve_policy(tmp_path):
-    from specify_cli.integrations import get_integration
-    from specify_cli.integrations._helpers import (
-        _update_init_options_for_integration, _clear_init_options_for_integration,
-        _refresh_init_options_speckit_version,
-    )
-
-    policy_module().save_project_options(tmp_path, {"allow_symlinks": True, "custom": "retained"})
-    _update_init_options_for_integration(tmp_path, get_integration("copilot"), script_type="sh")
-    _refresh_init_options_speckit_version(tmp_path)
-    _clear_init_options_for_integration(tmp_path, "copilot")
-    options = policy_module().read_project_options(tmp_path)
-    assert options["allow_symlinks"] is True
-    assert options["custom"] == "retained"
-    assert "ai" not in options
 
 
-@pytest.mark.parametrize("leaf", [False, True])
-def test_init_flag_cannot_authorize_bootstrap_links(tmp_path, monkeypatch, symlinks, leaf):
-    monkeypatch.chdir(tmp_path)
-    if leaf:
-        (tmp_path / ".specify").mkdir()
-        (tmp_path / ".specify/init-options.json").symlink_to(tmp_path / "missing")
-    else:
-        (tmp_path / ".specify").symlink_to(tmp_path / "missing", target_is_directory=True)
-    result = CliRunner().invoke(app, [
-        "init", "--here", "--force", "--allow-symlinks", "--non-interactive",
-        "--integration", "copilot", "--ignore-agent-tools",
-    ])
-    assert result.exit_code == 1
-    assert "symlink" in result.output
-    assert not (tmp_path / ".github").exists()
-    assert not (tmp_path / "missing").exists()
 
 
 def test_new_configuration_respects_umask(tmp_path):
@@ -346,55 +175,8 @@ def test_unserializable_options_fail_before_creation(tmp_path, value):
     assert not (tmp_path / ".specify").exists()
 
 
-@pytest.mark.parametrize("args", [["bundle", "search", "--offline"], ["bundle", "info", "nonexistent", "--offline"]])
-def test_projectless_catalog_commands_do_not_require_policy(tmp_path, monkeypatch, args):
-    monkeypatch.chdir(tmp_path)
-    result = CliRunner().invoke(app, args)
-    assert "init-options.json" not in result.output
-    assert "Not a Spec Kit project" not in result.output
-    assert result.exception is None or isinstance(result.exception, SystemExit)
 
 
-@pytest.mark.parametrize("args", [
-    ["bundle", "init"], ["bundle", "install", "missing", "--offline"],
-    ["bundle", "list"], ["bundle", "list", "--json"],
-    ["bundle", "search", "--offline"], ["bundle", "search", "--offline", "--json"],
-    ["bundle", "info", "missing", "--offline"],
-    ["bundle", "info", "missing", "--offline", "--json"],
-])
-@pytest.mark.parametrize("parent_project", [False, True])
-@pytest.mark.parametrize("dangling", [False, True])
-def test_bundle_forbidden_marker_fails_without_initialization_or_install(
-    tmp_path, monkeypatch, symlinks, args, parent_project, dangling,
-):
-    from unittest.mock import patch
-
-    if parent_project:
-        policy_module().save_project_options(tmp_path, {})
-    member = tmp_path / "member"
-    member.mkdir()
-    target = tmp_path / "linked-config"
-    if not dangling:
-        target.mkdir()
-        (target / "init-options.json").write_text('{"allow_symlinks": true}')
-    (member / ".specify").symlink_to(target, target_is_directory=True)
-    monkeypatch.chdir(member)
-    monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
-    before = set(tmp_path.rglob("*"))
-    with (
-        patch("specify_cli.bundles.command_init._run_init") as init,
-        patch("specify_cli.bundles.command_install._run_init") as install_init,
-        patch("specify_cli.bundles.installer.install_bundle") as install,
-    ):
-        result = CliRunner().invoke(app, args)
-    assert result.exit_code == 1, result.output
-    assert result.stdout == ""
-    if "--json" in args:
-        assert "symlink" in json.loads(result.stderr)["error"]
-    else:
-        assert "symlink" in result.stderr
-    assert not init.called and not install_init.called and not install.called
-    assert set(tmp_path.rglob("*")) == before
 
 
 def _configuration_case(root, case):
@@ -415,84 +197,10 @@ def _configuration_case(root, case):
         config.write_text(case)
 
 
-@pytest.mark.parametrize("case", [
-    "{", '{"allow_symlinks": 1}', "[]", "marker-link", "leaf-link", "dangling-link",
-])
-@pytest.mark.parametrize("explicit", [False, True])
-def test_init_lifecycle_policy_precedes_preparation(tmp_path, monkeypatch, symlinks, case, explicit):
-    from specify_cli.integrations import _lifecycle, installer
-
-    root = tmp_path / "target" if explicit else tmp_path
-    root.mkdir(exist_ok=True)
-    _configuration_case(root, case)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "unrelated"))
-    handler = Mock()
-
-    def init_handler(project_name=None, here=False, integration=None):
-        handler()
-
-    invoke = _lifecycle.external_lifecycle("init")(init_handler)
-    with (
-        patch.object(installer, "read_records", return_value={}) as records,
-        patch.object(installer, "load_installed_integrations") as loader,
-        patch.object(installer, "catalog_package") as catalog,
-        patch.object(_lifecycle, "_transaction") as transaction,
-        pytest.raises(typer.Exit) as failure,
-    ):
-        invoke(project_name=str(root) if explicit else None, here=not explicit, integration="generic")
-    assert failure.value.exit_code == 1
-    handler.assert_not_called()
-    records.assert_not_called()
-    loader.assert_not_called()
-    catalog.assert_not_called()
-    transaction.assert_not_called()
 
 
-@pytest.mark.parametrize("options", [None, {}, {"allow_symlinks": False}, {"allow_symlinks": True}])
-def test_init_lifecycle_selects_explicit_target(tmp_path, monkeypatch, options):
-    from specify_cli.integrations import _lifecycle, installer
-
-    root = tmp_path / "target"
-    root.mkdir()
-    if options is not None:
-        policy_module().save_project_options(root, options)
-    _configuration_case(tmp_path, "{")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "unrelated"))
-    seen = []
-
-    @_lifecycle.external_lifecycle("init")
-    def handler(project_name=None, integration=None):
-        seen.append(project_name)
-
-    with (
-        patch.object(installer, "read_records", return_value={}) as records,
-        patch.object(installer, "load_installed_integrations") as loader,
-    ):
-        handler(project_name=str(root), integration="generic")
-    assert seen == [str(root)]
-    assert all(call.args == (root.resolve(),) for call in records.call_args_list)
-    assert all(call.args == (root.resolve(),) for call in loader.call_args_list)
 
 
-@pytest.mark.parametrize("existing", [False, True])
-def test_policy_write_rolls_back_with_init_transaction(tmp_path, existing):
-    from specify_cli.integrations import _lifecycle
-
-    root = tmp_path / "target"
-    original = {"allow_symlinks": True, "custom": "retained"}
-    if existing:
-        root.mkdir()
-        policy_module().save_project_options(root, original)
-    with pytest.raises(RuntimeError, match="downstream init failed"):
-        with _lifecycle._transaction(root, "generic", None, {}):
-            policy_module().save_project_options(root, {"allow_symlinks": False})
-            raise RuntimeError("downstream init failed")
-    if existing:
-        assert policy_module().read_project_options(root) == original
-    else:
-        assert not root.exists()
 
 
 @pytest.mark.parametrize("case", ["marker-link", "leaf-link", "dangling-link"])
@@ -530,120 +238,12 @@ def test_configuration_observer_surrounds_actual_write(tmp_path):
     assert seen == [(destination, True, original), (destination, False, replacement)]
 
 
-def test_init_lifecycle_unreadable_policy_precedes_project_work(tmp_path, monkeypatch):
-    from specify_cli.integrations import _lifecycle, installer
-
-    policy_module().save_project_options(tmp_path, {})
-
-    def denied(*args, **kwargs):
-        raise PermissionError("configuration permission denied")
-
-    monkeypatch.setattr(FileHelper, "read_bytes", denied)
-    called = Mock()
-
-    @_lifecycle.external_lifecycle("init")
-    def handler(project_name=None, integration=None):
-        called()
-
-    with (
-        patch.object(installer, "read_records", return_value={}) as records,
-        patch.object(installer, "load_installed_integrations") as loader,
-        pytest.raises(typer.Exit) as failure,
-    ):
-        handler(project_name=str(tmp_path), integration="generic")
-    assert failure.value.exit_code == 1
-    assert "permission denied" in str(failure.value.__cause__)
-    records.assert_not_called()
-    loader.assert_not_called()
-    called.assert_not_called()
 
 
-@pytest.mark.parametrize("alias", [False, True])
-def test_init_transaction_retains_requested_spelling_and_initial_state(tmp_path, monkeypatch, symlinks, alias):
-    from specify_cli.integrations import _lifecycle, installer
-
-    parent = tmp_path / "parent"
-    parent.mkdir()
-    requested_parent = tmp_path / "alias" if alias else parent
-    if alias:
-        requested_parent.symlink_to(parent, target_is_directory=True)
-    requested = requested_parent / "new"
-    prepared = []
-    original_prepare = policy_module().prepare_init_root
-
-    def prepare(target):
-        prepared.append(target)
-        return original_prepare(target)
-
-    monkeypatch.setattr(policy_module(), "prepare_init_root", prepare)
-    monkeypatch.setattr(installer, "read_records", lambda root: {"generic": {}})
-    monkeypatch.setattr(installer, "load_installed_integrations", lambda root: None)
-
-    @_lifecycle.external_lifecycle("init")
-    def handler(project_name=None, integration=None):
-        assert _lifecycle.initial_directory_state(Path(project_name).absolute()) == (False, [])
-        policy_module().save_project_options(Path(project_name).resolve(), {"allow_symlinks": True})
-        raise RuntimeError("downstream init failed")
-
-    with pytest.raises(typer.Exit) as failure:
-        handler(project_name=str(requested), integration="generic")
-    assert failure.value.exit_code == 1
-    assert prepared == [requested]
-    assert not requested.exists()
 
 
-def test_init_transaction_does_not_resolve_away_dangling_parent(tmp_path, monkeypatch, symlinks):
-    from specify_cli.integrations import _lifecycle, installer
-
-    missing = tmp_path / "missing-parent"
-    alias = tmp_path / "alias"
-    alias.symlink_to(missing, target_is_directory=True)
-    monkeypatch.setattr(installer, "read_records", lambda root: {"generic": {}})
-    monkeypatch.setattr(installer, "load_installed_integrations", lambda root: None)
-    called = []
-
-    @_lifecycle.external_lifecycle("init")
-    def handler(project_name=None, integration=None):
-        called.append(project_name)
-        raise RuntimeError("must not invoke handler")
-
-    with pytest.raises(typer.Exit):
-        handler(project_name=str(alias / "new"), integration="generic")
-    assert called == []
-    assert not missing.exists()
 
 
-@pytest.mark.parametrize("case", ["dangling-parent", "missing-parent-traversal"])
-def test_new_init_target_preserves_evidence_before_project_reads(tmp_path, symlinks, case):
-    from specify_cli.integrations import _lifecycle, installer
-
-    unrelated = tmp_path / "unrelated"
-    unrelated.mkdir()
-    policy_module().save_project_options(unrelated, {"allow_symlinks": True})
-    if case == "dangling-parent":
-        alias = tmp_path / "alias"
-        alias.symlink_to(tmp_path / "missing", target_is_directory=True)
-        requested = alias / "new"
-    else:
-        requested = tmp_path / "missing" / ".." / "unrelated"
-    called = Mock()
-
-    @_lifecycle.external_lifecycle("init")
-    def handler(project_name=None, integration=None):
-        called()
-
-    with (
-        patch.object(installer, "read_records", return_value={}) as records,
-        patch.object(installer, "load_installed_integrations") as loader,
-        patch.object(installer, "catalog_package") as catalog,
-        pytest.raises(typer.Exit),
-    ):
-        handler(project_name=str(requested), integration="generic")
-    records.assert_not_called()
-    loader.assert_not_called()
-    catalog.assert_not_called()
-    called.assert_not_called()
-    assert not (tmp_path / "missing").exists()
 
 
 @pytest.fixture
@@ -664,230 +264,3 @@ def normalized_parent_traversal(monkeypatch):
 
     monkeypatch.setattr(Path, "exists", normalized_exists)
     monkeypatch.setattr(Path, "resolve", normalized_resolve)
-
-
-@pytest.mark.parametrize("prefix_kind", ["missing", "file"])
-def test_init_normalized_traversal_fails_before_project_reads(
-    tmp_path, normalized_parent_traversal, prefix_kind,
-):
-    from specify_cli.integrations import _lifecycle, installer
-
-    unrelated = tmp_path / "unrelated"
-    unrelated.mkdir()
-    policy_module().save_project_options(unrelated, {"allow_symlinks": True})
-    prefix = tmp_path / "prefix"
-    if prefix_kind == "file":
-        prefix.write_text("retained")
-    requested = prefix / ".." / unrelated.name
-    assert requested.exists()
-    assert requested.resolve(strict=True) == unrelated
-    called = Mock()
-
-    @_lifecycle.external_lifecycle("init")
-    def handler(project_name=None, integration=None):
-        called()
-
-    with (
-        patch.object(installer, "read_records", return_value={}) as records,
-        patch.object(installer, "load_installed_integrations") as loader,
-        patch.object(installer, "catalog_package") as catalog,
-        patch.object(policy_module(), "read_project_options") as options,
-        pytest.raises(typer.Exit) as failure,
-    ):
-        handler(project_name=str(requested), integration="generic")
-    assert failure.value.exit_code == 1
-    records.assert_not_called()
-    loader.assert_not_called()
-    catalog.assert_not_called()
-    options.assert_not_called()
-    called.assert_not_called()
-    if prefix_kind == "file":
-        assert prefix.read_text() == "retained"
-    else:
-        assert not prefix.exists()
-
-
-@pytest.mark.parametrize("prefix_kind", ["missing", "file"])
-@pytest.mark.parametrize("existing", [False, True])
-def test_prepare_init_root_rejects_normalized_traversal(
-    tmp_path, normalized_parent_traversal, prefix_kind, existing,
-):
-    target = tmp_path / "target"
-    if existing:
-        target.mkdir()
-        (target / "retained").write_text("retained")
-    prefix = tmp_path / "prefix"
-    if prefix_kind == "file":
-        prefix.write_text("retained")
-    with pytest.raises(ValueError, match="Parent traversal"):
-        policy_module().prepare_init_root(prefix / ".." / target.name)
-    assert target.exists() is existing
-    if existing:
-        assert (target / "retained").read_text() == "retained"
-
-
-@pytest.mark.parametrize("existing", [False, True])
-def test_init_existing_parent_traversal_root_remains_trusted(tmp_path, existing):
-    anchor = tmp_path / "anchor"
-    anchor.mkdir()
-    target = tmp_path / "target"
-    if existing:
-        target.mkdir()
-        policy_module().save_project_options(target, {"allow_symlinks": True})
-    requested = anchor / ".." / target.name
-    assert policy_module().preflight_init_root(requested) == target
-    assert target.exists() is existing
-    assert policy_module().prepare_init_root(requested) == requested
-    assert policy_module().project_files(requested).allow_symlinks is existing
-
-
-def test_init_linked_parent_traversal_root_remains_trusted(tmp_path, symlinks):
-    parent = tmp_path / "parent"
-    parent.mkdir()
-    (parent / "anchor").mkdir()
-    target = parent / "project"
-    target.mkdir()
-    policy_module().save_project_options(target, {"allow_symlinks": True})
-    alias = tmp_path / "alias"
-    alias.symlink_to(parent, target_is_directory=True)
-    requested = alias / "anchor" / ".." / target.name
-    assert policy_module().preflight_init_root(requested) == target
-    assert policy_module().prepare_init_root(requested) == requested
-    assert policy_module().project_files(requested).allow_symlinks is True
-
-
-@pytest.mark.parametrize("operation", ["preflight_init_root", "prepare_init_root"])
-@pytest.mark.parametrize("error", [PermissionError("prefix permission denied"), OSError("prefix I/O failed")])
-def test_init_parent_traversal_io_failures_are_explicit(tmp_path, monkeypatch, operation, error):
-    prefix = tmp_path / "prefix"
-    prefix.mkdir()
-    requested = prefix / ".." / "target"
-    original_stat = Path.stat
-
-    def failing_stat(path, *args, **kwargs):
-        if path == prefix:
-            raise error
-        return original_stat(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "stat", failing_stat)
-    expected = policy_module().ProjectPolicyError if operation == "preflight_init_root" else type(error)
-    with pytest.raises(expected, match=str(error)):
-        getattr(policy_module(), operation)(requested)
-    assert not (tmp_path / "target").exists()
-
-
-@pytest.mark.parametrize("override", [False, True])
-@pytest.mark.parametrize("document", [None, "{}", '{"allow_symlinks": true}', '{"allow_symlinks": false}'])
-def test_check_policy_optional_project_and_override(tmp_path, monkeypatch, override, document):
-    root = tmp_path / "selected" if override else tmp_path
-    root.mkdir(exist_ok=True)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
-    if override:
-        _configuration_case(tmp_path, "{")
-        monkeypatch.setenv("SPECIFY_INIT_DIR", "selected")
-        (root / ".specify").mkdir()
-    if document is not None:
-        (root / ".specify").mkdir(exist_ok=True)
-        (root / ".specify/init-options.json").write_text(document)
-    with (
-        patch("specify_cli.integrations.installer.load_installed_integrations") as loader,
-        patch("specify_cli.integrations.installer.read_records", return_value={}) as records,
-        patch("specify_cli.check_tool", return_value=True) as tools,
-    ):
-        result = CliRunner().invoke(app, ["check"])
-    assert result.exit_code == 0, result.output
-    loader.assert_called_once_with(root)
-    records.assert_called_once_with(root)
-    assert tools.called
-
-
-@pytest.mark.parametrize("override", [False, True])
-@pytest.mark.parametrize("case", ["{", '{"allow_symlinks": null}', "marker-link", "leaf-link", "dangling-link"])
-def test_check_policy_failure_precedes_adapters_and_tools(tmp_path, monkeypatch, symlinks, override, case):
-    root = tmp_path / "selected" if override else tmp_path
-    root.mkdir(exist_ok=True)
-    _configuration_case(root, case)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
-    if override:
-        monkeypatch.setenv("SPECIFY_INIT_DIR", "selected")
-    with (
-        patch("specify_cli.integrations.installer.load_installed_integrations") as loader,
-        patch("specify_cli.integrations.installer.read_records") as records,
-        patch("specify_cli.check_tool") as tools,
-    ):
-        result = CliRunner().invoke(app, ["check"])
-    assert result.exit_code == 1, result.output
-    assert "init-options.json" in result.output
-    loader.assert_not_called()
-    records.assert_not_called()
-    tools.assert_not_called()
-
-
-@pytest.mark.parametrize("operation", ["list", "info"])
-@pytest.mark.parametrize("case", ["{", '{"allow_symlinks": "true"}', "marker-link", "leaf-link", "dangling-link"])
-def test_artifact_operation_policy_failure_precedes_catalog(tmp_path, monkeypatch, symlinks, operation, case):
-    from specify_cli.artifacts import _operation_info, _operation_list
-
-    _configuration_case(tmp_path, case)
-    catalog = Mock()
-    module = _operation_list if operation == "list" else _operation_info
-    monkeypatch.setattr(module, "ArtifactCatalog", catalog)
-    if operation == "list":
-        request = module.ArtifactListRequest(tmp_path)
-        call = module.list_artifacts
-        expected = module.ArtifactListResolutionError
-    else:
-        request = module.ArtifactInfoRequest(tmp_path, "speckit.plan")
-        call = module.get_artifact_info
-        expected = module.ArtifactInfoResolutionError
-    with pytest.raises(expected, match="init-options.json") as failure:
-        call(request)
-    assert failure.value.code == "artifact_resolution_failed"
-    catalog.assert_not_called()
-
-
-@pytest.mark.parametrize("operation", ["list", "info"])
-@pytest.mark.parametrize("options", [None, {}, {"allow_symlinks": False}, {"allow_symlinks": True}])
-def test_artifact_operations_reload_valid_policy(tmp_path, operation, options):
-    from specify_cli.artifacts import _operation_info, _operation_list
-
-    for folder in ["templates", "presets", "extensions"]:
-        (tmp_path / ".specify" / folder).mkdir(parents=True, exist_ok=True)
-    config = tmp_path / ".specify/init-options.json"
-    if options is None:
-        config.unlink(missing_ok=True)
-    else:
-        policy_module().save_project_options(tmp_path, options)
-    if operation == "list":
-        request = _operation_list.ArtifactListRequest(tmp_path)
-        call = _operation_list.list_artifacts
-        expected = _operation_list.ArtifactListResolutionError
-    else:
-        request = _operation_info.ArtifactInfoRequest(tmp_path, "speckit.plan")
-        call = _operation_info.get_artifact_info
-        expected = _operation_info.ArtifactInfoResolutionError
-    assert call(request) is not None
-    config.write_text("{")
-    with pytest.raises(expected, match="init-options.json"):
-        call(request)
-
-
-@pytest.mark.parametrize("operation", ["list", "info"])
-@pytest.mark.parametrize("case", ["{", '{"allow_symlinks": 0}', "marker-link", "leaf-link", "dangling-link"])
-def test_artifact_mcp_policy_errors_keep_transport_contract(tmp_path, symlinks, operation, case):
-    from specify_cli.mcp_server.server import create_server
-
-    _configuration_case(tmp_path, case)
-    arguments = {"identifier": "speckit.plan"} if operation == "info" else {}
-    result = asyncio.run(create_server(launch_directory=tmp_path).call_tool(
-        f"specify_artifact_{operation}", arguments,
-    ))
-    assert result.is_error is True
-    error = result.structured_content["error"]
-    assert error["code"] == "artifact_resolution_failed"
-    assert error["retryable"] is False
-    assert error["details"]["project_directory"] == str(tmp_path)
-    assert "init-options.json" in error["message"]
-    assert "Traceback" not in str(result)

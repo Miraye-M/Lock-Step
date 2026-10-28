@@ -24,6 +24,8 @@
     "MD060": false
   },
   "ignores": [
-    ".genreleases/"
+    ".venv/",
+    ".specify/",
+    "demo/"
   ]
 }

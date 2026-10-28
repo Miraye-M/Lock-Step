@@ -2,7 +2,7 @@
 
 import pytest
 
-from specify_cli.integrations.base import MarkdownIntegration
+
 
 
 def _redirect_home(monkeypatch: pytest.MonkeyPatch, home) -> None:
@@ -37,22 +37,3 @@ def _isolate_integration_home_session(tmp_path_factory):
 def _isolate_integration_home(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Keep integration tests from reading or writing the real user home."""
     _redirect_home(monkeypatch, tmp_path / "home")
-
-
-class StubIntegration(MarkdownIntegration):
-    """Minimal concrete integration for testing."""
-
-    key = "stub"
-    config = {
-        "name": "Stub Agent",
-        "folder": ".stub/",
-        "commands_subdir": "commands",
-        "install_url": None,
-        "requires_cli": False,
-    }
-    registrar_config = {
-        "dir": ".stub/commands",
-        "format": "markdown",
-        "args": "$ARGUMENTS",
-        "extension": ".md",
-    }

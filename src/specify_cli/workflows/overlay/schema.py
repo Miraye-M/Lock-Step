@@ -6,7 +6,15 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from ...extensions import normalize_priority
+def normalize_priority(value, default=10):
+    if isinstance(value, bool):
+        return default
+    try:
+        priority = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return priority if priority >= 1 else default
+
 
 # Safe single-segment identifiers: no path separators, no traversal, no dots.
 _SAFE_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")

@@ -195,7 +195,6 @@ class TestDependencyAuditWorkflow:
         repo_standard_refs = set()
         for workflow_path in (
             REPO_ROOT / ".github" / "workflows" / "test.yml",
-            REPO_ROOT / ".github" / "workflows" / "publish-pypi.yml",
         ):
             workflow_data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
             repo_standard_refs.update(

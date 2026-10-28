@@ -2195,7 +2195,7 @@ def test_output_validation_rejects_reserved_and_yaml_native_values(tmp_path, pro
 
 
 def test_nested_gate_reporting_uses_active_occurrence(tmp_path, probe):
-    from specify_cli.workflows._commands import _workflow_run_payload
+    from specify_cli.workflows.reporting import workflow_run_payload as _workflow_run_payload
 
     install(
         tmp_path,
@@ -2231,7 +2231,7 @@ def test_nested_gate_reporting_uses_active_occurrence(tmp_path, probe):
     (RuntimeError, "failed"),
 ])
 def test_interrupted_bound_call_reports_run_outcome(tmp_path, monkeypatch, probe, failure, expected):
-    from specify_cli.workflows._commands import _workflow_run_payload
+    from specify_cli.workflows.reporting import workflow_run_payload as _workflow_run_payload
 
     class Explode(StepBase):
         type_key = "explode"
@@ -3495,7 +3495,7 @@ def test_failed_fan_out_item_exception_reports_qualified_current_step_id(
 
 
 def test_paused_fan_out_gate_payload_reports_qualified_step_id(tmp_path):
-    from specify_cli.workflows._commands import _workflow_run_payload
+    from specify_cli.workflows.reporting import workflow_run_payload as _workflow_run_payload
 
     state = WorkflowEngine(tmp_path).execute(
         definition(
@@ -3519,7 +3519,7 @@ def test_paused_fan_out_gate_payload_reports_qualified_step_id(tmp_path):
 
 
 def test_gate_message_keeps_typed_template_result(tmp_path):
-    from specify_cli.workflows._commands import _workflow_run_payload
+    from specify_cli.workflows.reporting import workflow_run_payload as _workflow_run_payload
 
     workflow = definition(
         "parent",

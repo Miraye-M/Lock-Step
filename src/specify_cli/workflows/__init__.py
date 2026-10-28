@@ -44,30 +44,28 @@ def get_step_type(type_key: str) -> StepBase | None:
 
 def _register_builtin_steps() -> None:
     """Register all built-in step types."""
+    from ..remediation.step import RemediationStep
     from .step.command import CommandStep
     from .step.do_while import DoWhileStep
     from .step.fan_in import FanInStep
     from .step.fan_out import FanOutStep
     from .step.gate import GateStep
-    from .step.github import GitHubStep
     from .step.workflow import WorkflowStep
     from .step.if_then import IfThenStep
-    from .step.init import InitStep
     from .step.prompt import PromptStep
     from .step.shell import ShellStep
     from .step.slot import SlotStep
     from .step.switch import SwitchStep
     from .step.while_loop import WhileStep
 
+    _register_step(RemediationStep())
     _register_step(CommandStep())
     _register_step(DoWhileStep())
     _register_step(FanInStep())
     _register_step(FanOutStep())
     _register_step(GateStep())
-    _register_step(GitHubStep())
     _register_step(WorkflowStep())
     _register_step(IfThenStep())
-    _register_step(InitStep())
     _register_step(PromptStep())
     _register_step(ShellStep())
     _register_step(SlotStep())

@@ -1614,60 +1614,6 @@ class TestRedirectStripping:
 # ---------------------------------------------------------------------------
 
 
-class TestFetchLatestReleaseTagDelegation:
-    def _set_config(self, monkeypatch, entries):
-        from specify_cli.authentication import http as _mod
-        monkeypatch.setattr(_mod, "_config_override", entries)
-
-    def _capture_request(self):
-        import json as _json
-        from unittest.mock import MagicMock
-        captured: dict = {}
-        def side_effect(req, timeout=None):
-            captured["request"] = req
-            body = _json.dumps({"tag_name": "v9.9.9"}).encode()
-            resp = MagicMock()
-            resp.read.side_effect = io.BytesIO(body).read
-            cm = MagicMock()
-            cm.__enter__.return_value = resp
-            cm.__exit__.return_value = False
-            return cm
-        return captured, side_effect
-
-    def test_gh_token_forwarded_when_configured(self, monkeypatch):
-        from unittest.mock import MagicMock, patch
-        from specify_cli._version import _fetch_latest_release_tag
-        monkeypatch.setenv("GH_TOKEN", "forwarded-sentinel")
-        self._set_config(monkeypatch, [_github_entry()])
-        captured, side_effect = self._capture_request()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
-            _fetch_latest_release_tag()
-        assert captured["request"].get_header("Authorization") == "Bearer forwarded-sentinel"
-
-    def test_no_config_means_no_auth(self, monkeypatch):
-        from unittest.mock import MagicMock, patch
-        from specify_cli._version import _fetch_latest_release_tag
-        self._set_config(monkeypatch, [])
-        captured, side_effect = self._capture_request()
-        # The unauthenticated path uses the strict redirect opener too.
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
-            _fetch_latest_release_tag()
-        assert captured["request"].get_header("Authorization") is None
-
-    def test_accept_header_present(self, monkeypatch):
-        from unittest.mock import MagicMock, patch
-        from specify_cli._version import _fetch_latest_release_tag
-        self._set_config(monkeypatch, [])
-        captured, side_effect = self._capture_request()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
-            _fetch_latest_release_tag()
-        assert captured["request"].get_header("Accept") == "application/vnd.github+json"
 
 
 # ---------------------------------------------------------------------------

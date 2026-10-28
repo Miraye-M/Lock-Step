@@ -1,0 +1,111 @@
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+import download
+from download import DownloadRoot
+
+
+def directory_link(link, target):
+    if os.name == "nt":
+        # Junctions exercise native reparse handling without symlink privileges.
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                       check=True, capture_output=True)
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+class DownloadTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.root = self.base / "downloads"
+        self.root.mkdir()
+        (self.root / "report.txt").write_bytes(b"safe")
+        (self.base / "secret.txt").write_bytes(b"secret")
+        self.outside = self.base / "downloads-other"
+        self.outside.mkdir()
+        (self.outside / "secret.txt").write_bytes(b"secret")
+        (self.outside / "report.txt").write_bytes(b"secret")
+
+    def test_regular_download(self):
+        nested = self.root / "nested"
+        nested.mkdir()
+        (nested / "résumé.txt").write_bytes(b"nested safe")
+        with DownloadRoot(self.root) as reader:
+            self.assertEqual(reader.read("report.txt"), b"safe")
+            self.assertEqual(reader.read("nested/résumé.txt"), b"nested safe")
+
+    def test_traversal(self):
+        with DownloadRoot(self.root) as reader:
+            with self.assertRaises(ValueError):
+                reader.read("../secret.txt")
+
+    def test_absolute_escape(self):
+        with DownloadRoot(self.root) as reader:
+            for name in (str(self.base / "secret.txt"), str(self.root / "report.txt"),
+                         "C:/secret.txt", "C:secret.txt", "//server/share/file",
+                         "..\\secret.txt", "report.txt:stream", "NUL", "a/../report.txt"):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    reader.read(name)
+
+    def test_links(self):
+        directory_link(self.root / "link", self.outside)
+        with DownloadRoot(self.root) as reader:
+            with self.assertRaises((ValueError, OSError)):
+                reader.read("link/secret.txt")
+            os.link(self.base / "secret.txt", self.root / "hardlink")
+            with self.assertRaises((ValueError, OSError)):
+                reader.read("hardlink")
+            if os.name == "posix":
+                (self.root / "leaf").symlink_to(self.base / "secret.txt")
+                with self.assertRaises((ValueError, OSError)):
+                    reader.read("leaf")
+
+    def test_replacement_race(self):
+        folder = self.root / "child"
+        folder.mkdir()
+        (folder / "report.txt").write_bytes(b"safe")
+        original = download._open_child
+        replaced = []
+
+        def replace_after_open(parent, name, directory):
+            handle = original(parent, name, directory)
+            if name == "child" and not replaced:
+                try:
+                    folder.rename(self.root / "pinned")
+                    directory_link(folder, self.outside)
+                    replaced.append(True)
+                except BaseException:
+                    download._close(handle)
+                    raise
+            return handle
+
+        with DownloadRoot(self.root) as reader:
+            with patch.object(download, "_open_child", replace_after_open):
+                self.assertEqual(reader.read("child/report.txt"), b"safe")
+        self.assertTrue(replaced, "Test must actually replace the directory")
+
+    def test_closed_and_nonregular(self):
+        reader = DownloadRoot(self.root)
+        reader.close()
+        reader.close()
+        with self.assertRaises(ValueError):
+            reader.read("report.txt")
+        with DownloadRoot(self.root) as reader:
+            with self.assertRaises((ValueError, OSError)):
+                reader.read("missing")
+            with self.assertRaises((ValueError, OSError)):
+                reader.read("../secret.txt")
+            if os.name == "posix":
+                os.mkfifo(self.root / "pipe")
+                with self.assertRaises((ValueError, OSError)):
+                    reader.read("pipe")
+            self.assertEqual(reader.read("report.txt"), b"safe")
+
+
+if __name__ == "__main__":
+    unittest.main()

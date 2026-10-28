@@ -45,7 +45,7 @@ VERSION_RESULT = VersionResult(
         architecture="example64",
         os_version="ExampleOS 4.5",
     ),
-    features={"workflow_catalog": True},
+    features={"remediation": True},
 )
 VERSION_PAYLOAD = {
     "cli_version": "1.2.3",
@@ -58,7 +58,7 @@ VERSION_PAYLOAD = {
         "architecture": "example64",
         "os_version": "ExampleOS 4.5",
     },
-    "features": {"workflow_catalog": True},
+    "features": {"remediation": True},
 }
 
 
@@ -67,30 +67,11 @@ def _run(coro):
 
 
 def test_specify_version_dispatches_directly_to_shared_operation():
-    command_runner = Mock(side_effect=AssertionError("subprocess executor reached"))
-
-    with (
-        patch(
-            "specify_cli.mcp_version.collect_version_result",
-            return_value=VERSION_RESULT,
-        ) as collect,
-        patch(
-            "specify_cli.mcp_server.executor._run_cli_process",
-            side_effect=AssertionError("subprocess executor reached"),
-        ) as run_cli_process,
-        patch(
-            "specify_cli.command_version.version",
-            side_effect=AssertionError("CLI adapter reached"),
-        ) as cli_adapter,
-    ):
-        server = create_server(command_runner=command_runner)
+    with patch("specify_cli.mcp_version.collect_version_result", return_value=VERSION_RESULT) as collect:
+        server = create_server()
         result = _run(server.call_tool(TOOL_NAME, {}))
-
     assert result.structured_content == VERSION_PAYLOAD
     collect.assert_called_once_with()
-    command_runner.assert_not_called()
-    run_cli_process.assert_not_called()
-    cli_adapter.assert_not_called()
 
 
 def test_specify_version_matches_shared_operation_and_cli_json_semantics():
@@ -150,7 +131,7 @@ def test_specify_version_preserves_unavailable_openssl_as_none():
             cli_version="1.2.3",
             runtime=VERSION_RESULT.runtime,
             system=VERSION_RESULT.system,
-            features={"workflow_catalog": "yes"},
+            features={"remediation": "yes"},
         ),
     ],
 )

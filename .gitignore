@@ -1,62 +1,38 @@
-# Python
+# Python and build output
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-/lib/
-/lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
-# Virtual environments
+# Virtual environments and editors
+.venv/
 venv/
-ENV/
 env/
-.venv
-
-# IDE
+ENV/
 .vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
+
+# Local credentials, diagnostics and temporary output
+.env
+.env.*
+*.log
 *.tmp
 
-# Project specific
-*.log
-.env
-.env.local
-*.lock
-
-# Spec Kit-specific files
-.genreleases/
-*.zip
-sdd-*/
-docs/dev
-
-# Extension system
-.specify/extensions/.cache/
-.specify/extensions/.backup/
-.specify/extensions/*/local-config.yml
-
-# The following directories/file are intentionally ignored so that they are not accidentally
-# committed to the repository. They contain the scaffolding `specify init --integration copilot`
-# (or other agents) does and they are meant for dogfooding Spec Kit during its own feature development.
-.github/agents/
-.github/prompts/
-.github/copilot-instructions.md
-.grok/
+# Generated control state, agent installations and local Git demo repositories.
+# Canonical profiles are packaged under src/specify_cli/remediation/assets/.
 .specify/
-specs/
+.github/agents/
+/demo/

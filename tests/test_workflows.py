@@ -16,7 +16,6 @@ import json
 
 import os
 import shutil
-import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -106,7 +105,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init", "slot", "github", "workflow",
+            "while", "do-while", "fan-out", "fan-in", "slot",  "workflow",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -162,11 +161,11 @@ class TestBaseClasses:
 
         ctx = StepContext(
             inputs={"name": "test"},
-            default_integration="claude",
+            default_integration="copilot",
             default_model="sonnet-4",
         )
         assert ctx.inputs == {"name": "test"}
-        assert ctx.default_integration == "claude"
+        assert ctx.default_integration == "copilot"
         assert ctx.default_model == "sonnet-4"
 
     def test_step_result_defaults(self):
@@ -1518,106 +1517,6 @@ class TestExpressions:
 
 # ===== Integration Dispatch Tests =====
 
-class TestBuildExecArgs:
-    """Test build_exec_args for CLI-based integrations."""
-
-    def test_claude_exec_args(self):
-        from specify_cli.integrations.claude import ClaudeIntegration
-        impl = ClaudeIntegration()
-        args = impl.build_exec_args("do stuff", model="sonnet-4")
-        assert args[0] == "claude"
-        assert args[1] == "-p"
-        assert args[2] == "do stuff"
-        assert "--model" in args
-        assert "sonnet-4" in args
-        assert "--output-format" in args
-
-    def test_gemini_exec_args(self):
-        from specify_cli.integrations.gemini import GeminiIntegration
-        impl = GeminiIntegration()
-        args = impl.build_exec_args("do stuff", model="gemini-2.5-pro")
-        assert args[0] == "gemini"
-        assert args[1] == "-p"
-        assert "-m" in args
-        assert "gemini-2.5-pro" in args
-
-    def test_codex_exec_args(self):
-        from specify_cli.integrations.codex import CodexIntegration
-        impl = CodexIntegration()
-        args = impl.build_exec_args("do stuff")
-        assert args[0] == "codex"
-        assert args[1] == "exec"
-        assert args[2] == "do stuff"
-        assert "--json" in args
-
-    def test_copilot_exec_args(self, monkeypatch):
-        monkeypatch.delenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", raising=False)
-        monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
-        from specify_cli.integrations.copilot import CopilotIntegration, _copilot_executable
-        impl = CopilotIntegration()
-        args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
-        assert args[0] == _copilot_executable()
-        assert "-p" in args
-        assert "--yolo" in args
-        assert "--model" in args
-
-    def test_copilot_new_env_var_disables_yolo(self, monkeypatch):
-        monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
-        monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
-        from specify_cli.integrations.copilot import CopilotIntegration
-        impl = CopilotIntegration()
-        args = impl.build_exec_args("do stuff")
-        assert "--yolo" not in args
-
-    def test_copilot_deprecated_env_var_still_honoured(self, monkeypatch):
-        monkeypatch.delenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", raising=False)
-        monkeypatch.setenv("SPECKIT_ALLOW_ALL_TOOLS", "0")
-        import warnings
-        from specify_cli.integrations.copilot import CopilotIntegration
-        impl = CopilotIntegration()
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            args = impl.build_exec_args("do stuff")
-        assert "--yolo" not in args
-        assert any(
-            "SPECKIT_ALLOW_ALL_TOOLS is deprecated" in str(x.message)
-            and issubclass(x.category, UserWarning)
-            for x in w
-        )
-
-    def test_copilot_new_env_var_takes_precedence(self, monkeypatch):
-        monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "1")
-        monkeypatch.setenv("SPECKIT_ALLOW_ALL_TOOLS", "0")
-        from specify_cli.integrations.copilot import CopilotIntegration
-        impl = CopilotIntegration()
-        args = impl.build_exec_args("do stuff")
-        assert "--yolo" in args
-
-    def test_ide_only_returns_none(self):
-        from specify_cli.integrations.kilocode import KilocodeIntegration
-        impl = KilocodeIntegration()
-        assert impl.build_exec_args("test") is None
-
-    def test_no_model_omits_flag(self):
-        from specify_cli.integrations.claude import ClaudeIntegration
-        impl = ClaudeIntegration()
-        args = impl.build_exec_args("do stuff", model=None)
-        assert "--model" not in args
-
-    def test_no_json_omits_flag(self):
-        from specify_cli.integrations.claude import ClaudeIntegration
-        impl = ClaudeIntegration()
-        args = impl.build_exec_args("do stuff", output_json=False)
-        assert "--output-format" not in args
-
-    def test_rovodev_exec_args(self):
-        from specify_cli.integrations.rovodev import RovodevIntegration
-
-        impl = RovodevIntegration()
-        args = impl.build_exec_args("/speckit.plan add OAuth")
-        assert args[0:3] == ["acli", "rovodev", "run"]
-        assert args[3] == "/speckit.plan add OAuth"
-        assert "--output-schema" in args
 
 
 # ===== Step Type Tests =====
@@ -1633,7 +1532,7 @@ class TestCommandStep:
         step = CommandStep()
         ctx = StepContext(
             inputs={"name": "login"},
-            default_integration="claude",
+            default_integration="copilot",
         )
         config = {
             "id": "test",
@@ -1644,152 +1543,10 @@ class TestCommandStep:
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
-        assert result.output["integration"] == "claude"
+        assert result.output["integration"] == "copilot"
         assert result.output["input"]["args"] == "login"
 
-    def test_per_step_integration_config_is_resolved_and_isolated(
-        self, tmp_path, monkeypatch
-    ):
-        from specify_cli.workflows.base import StepContext, StepStatus
-        from specify_cli.workflows.step.command import CommandStep
 
-        calls = []
-
-        def fake_run(args, **kwargs):
-            calls.append((args, kwargs))
-            return type("Result", (), {"returncode": 0})()
-
-        monkeypatch.delenv(
-            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
-        )
-        monkeypatch.setattr(
-            "shutil.which",
-            lambda name: (
-                "/usr/bin/docker-agent"
-                if name in {"docker-agent", "/usr/bin/docker-agent"}
-                else None
-            ),
-        )
-        monkeypatch.setattr("subprocess.run", fake_run)
-
-        step = CommandStep()
-        context = StepContext(
-            inputs={"config": "./review.yaml", "agent": "reviewer"},
-            project_root=str(tmp_path),
-        )
-        first = step.execute(
-            {
-                "id": "review",
-                "command": "speckit.plan",
-                "integration": "docker-agent",
-                "integration_args": ["{{ inputs.config }}"],
-                "integration_options": {
-                    "agent": "{{ inputs.agent }}",
-                    "safety": "balanced",
-                },
-            },
-            context,
-        )
-        second = step.execute(
-            {
-                "id": "implement",
-                "command": "speckit.implement",
-                "integration": "docker-agent",
-                "integration_args": ["./implement.yaml"],
-                "integration_options": {"agent": "implementer"},
-            },
-            context,
-        )
-
-        assert first.status is StepStatus.COMPLETED
-        assert second.status is StepStatus.COMPLETED
-        assert first.output["integration_args"] == ["./review.yaml"]
-        assert first.output["integration_options"] == {
-            "agent": "reviewer",
-            "safety": "balanced",
-        }
-        assert calls[0][0] == [
-            "/usr/bin/docker-agent",
-            "run",
-            "--exec",
-            "./review.yaml",
-            "--agent",
-            "reviewer",
-            "--safety",
-            "balanced",
-            "--",
-            "/speckit-plan",
-        ]
-        assert calls[1][0] == [
-            "/usr/bin/docker-agent",
-            "run",
-            "--exec",
-            "./implement.yaml",
-            "--agent",
-            "implementer",
-            "--",
-            "/speckit-implement",
-        ]
-        assert calls[0][1]["cwd"] == str(tmp_path)
-        assert calls[1][1]["cwd"] == str(tmp_path)
-
-    @pytest.mark.parametrize(
-        ("step_model", "default_model", "expected_model"),
-        [
-            ("step/model", "workflow/model", "step/model"),
-            (None, "workflow/model", "workflow/model"),
-        ],
-    )
-    def test_docker_agent_uses_one_effective_model(
-        self,
-        tmp_path,
-        monkeypatch,
-        step_model,
-        default_model,
-        expected_model,
-    ):
-        from specify_cli.workflows.base import StepContext, StepStatus
-        from specify_cli.workflows.step.command import CommandStep
-
-        calls = []
-
-        def fake_run(args, **kwargs):
-            calls.append(args)
-            return type("Result", (), {"returncode": 0})()
-
-        monkeypatch.delenv(
-            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
-        )
-        monkeypatch.setattr(
-            "shutil.which",
-            lambda name: (
-                "/usr/bin/docker-agent"
-                if name in {"docker-agent", "/usr/bin/docker-agent"}
-                else None
-            ),
-        )
-        monkeypatch.setattr("subprocess.run", fake_run)
-
-        config = {
-            "id": "implement",
-            "command": "speckit.implement",
-            "integration": "docker-agent",
-            "integration_args": ["./agent.yaml"],
-        }
-        if step_model is not None:
-            config["model"] = step_model
-
-        result = CommandStep().execute(
-            config,
-            StepContext(
-                default_model=default_model,
-                project_root=str(tmp_path),
-            ),
-        )
-
-        assert result.status is StepStatus.COMPLETED
-        assert calls[0].count("--model") == 1
-        assert calls[0][calls[0].index("--model") + 1] == expected_model
 
     def test_unsupported_runtime_config_fails_with_actionable_error(self):
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -1799,7 +1556,7 @@ class TestCommandStep:
             {
                 "id": "review",
                 "command": "speckit.plan",
-                "integration": "claude",
+                "integration": "copilot",
                 "integration_options": {"saftey": "balanced"},
             },
             StepContext(),
@@ -1841,36 +1598,6 @@ class TestCommandStep:
         assert any("'integration_args[0]' must be a string" in error for error in errors)
         assert any("keys must be strings" in error for error in errors)
 
-    def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
-        """When acli is installed, rovodev dispatch succeeds via acli."""
-        from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.step.command import CommandStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = CommandStep()
-        ctx = StepContext(
-            default_integration="rovodev",
-            project_root=str(tmp_path),
-        )
-        config = {
-            "id": "test",
-            "command": "speckit.plan",
-            "input": {"args": "add OAuth"},
-        }
-
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mock_result.stderr = ""
-
-        with patch("specify_cli.workflows.step.command.shutil.which",
-                    lambda name: "/usr/bin/acli" if name == "acli" else None), \
-             patch("subprocess.run", return_value=mock_result):
-            result = step.execute(config, ctx)
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["dispatched"] is True
-        assert result.output["exit_code"] == 0
 
     def test_validate_missing_command(self):
         from specify_cli.workflows.step.command import CommandStep
@@ -1906,7 +1633,7 @@ class TestCommandStep:
         assert res_opt.status is StepStatus.FAILED
         assert "'options' must be a mapping" in (res_opt.error or "")
 
-    @pytest.mark.parametrize("bad", [["claude"], {"a": 1}, 5, True])
+    @pytest.mark.parametrize("bad", [["copilot"], {"a": 1}, 5, True])
     def test_validate_rejects_non_string_integration_and_model(self, bad):
         """A non-string 'integration'/'model' must be rejected at validation.
 
@@ -1966,9 +1693,9 @@ class TestCommandStep:
         # crashing build_command_invocation with a raw AttributeError. Force a
         # resolvable integration + installed CLI so, absent the guard, dispatch
         # would actually be attempted and the crash would fire.
-        ctx = StepContext(default_integration="claude")
+        ctx = StepContext(default_integration="copilot")
         with patch("specify_cli.workflows.step.command.shutil.which",
-                   return_value="/usr/bin/claude"):
+                   return_value="/usr/bin/copilot"):
             for bad in (None, ["a", "b"], 5, {"x": 1}):
                 result = step.execute(
                     {"id": "c", "command": bad, "input": {}}, ctx
@@ -1985,14 +1712,14 @@ class TestCommandStep:
 
         step = CommandStep()
         res = step.execute(
-            {"id": "c", "command": "speckit.specify", "integration": ["claude"]},
+            {"id": "c", "command": "speckit.specify", "integration": ["copilot"]},
             StepContext(),
         )
         assert res.status is StepStatus.FAILED
         assert "'integration' must be a string" in (res.error or "")
         # non-string model likewise fails before build_exec_args
         res = step.execute(
-            {"id": "c", "command": "speckit.specify", "integration": "claude", "model": ["m"]},
+            {"id": "c", "command": "speckit.specify", "integration": "copilot", "model": ["m"]},
             StepContext(),
         )
         assert res.status is StepStatus.FAILED
@@ -2012,7 +1739,7 @@ class TestCommandStep:
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
-        ctx = StepContext(default_integration="claude", default_model="sonnet")
+        ctx = StepContext(default_integration="copilot", default_model="sonnet")
         res = step.execute(
             {"id": "c", "command": "speckit.specify", "integration": falsey}, ctx
         )
@@ -2031,7 +1758,7 @@ class TestCommandStep:
         from specify_cli.workflows.base import StepContext
 
         step = CommandStep()
-        ctx = StepContext(default_integration="claude")
+        ctx = StepContext(default_integration="copilot")
         config = {
             "id": "test",
             "command": "speckit.plan",
@@ -2052,7 +1779,7 @@ class TestCommandStep:
         step = CommandStep()
         config = {
             "id": "s", "command": "speckit.plan",
-            "integration": ["claude"], "input": {},
+            "integration": ["copilot"], "input": {},
         }
         result = step.execute(config, StepContext())
         assert result.status == StepStatus.FAILED
@@ -2101,7 +1828,7 @@ class TestCommandStep:
         step = CommandStep()
         ctx = StepContext(
             inputs={"name": "login"},
-            default_integration="claude",
+            default_integration="copilot",
             project_root="/tmp",
         )
         config = {
@@ -2124,7 +1851,7 @@ class TestCommandStep:
         step = CommandStep()
         ctx = StepContext(
             inputs={"name": "login"},
-            default_integration="claude",
+            default_integration="copilot",
             project_root=str(tmp_path),
         )
         config = {
@@ -2138,8 +1865,8 @@ class TestCommandStep:
         mock_result.stdout = '{"result": "done"}'
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.step.command.shutil.which", return_value="/usr/local/bin/claude"), \
-             patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value="/usr/local/bin/copilot"), \
+             patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/copilot"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
             result = step.execute(config, ctx)
 
@@ -2150,7 +1877,7 @@ class TestCommandStep:
         # which honors PATHEXT for ``.cmd``/``.bat`` shims on Windows), then
         # ``-p`` and the skill invocation.
         call_args = mock_run.call_args
-        assert call_args[0][0][0] == "/usr/local/bin/claude"
+        assert call_args[0][0][0] == "/usr/local/bin/copilot"
         assert call_args[0][0][1] == "-p"
         # Claude is a SkillsIntegration so uses /speckit-specify
         assert "/speckit-specify login" in call_args[0][0][2]
@@ -2161,17 +1888,17 @@ class TestCommandStep:
         from specify_cli.workflows.step.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
-        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
+        monkeypatch.setenv("SPECKIT_INTEGRATION_COPILOT_EXECUTABLE", "/opt/copilot")
         seen_which: list[str] = []
 
         def fake_which(name: str) -> str | None:
             seen_which.append(name)
-            return name if name == "/opt/claude" else None
+            return name if name == "/opt/copilot" else None
 
         step = CommandStep()
         ctx = StepContext(
             inputs={"name": "login"},
-            default_integration="claude",
+            default_integration="copilot",
             project_root=str(tmp_path),
         )
         config = {
@@ -2191,9 +1918,9 @@ class TestCommandStep:
 
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
-        assert seen_which[:2] == ["claude", "/opt/claude"]
+        assert seen_which[:2] == ["copilot", "/opt/copilot"]
         call_args = mock_run.call_args
-        assert call_args[0][0][0] == "/opt/claude"
+        assert call_args[0][0][0] == "/opt/copilot"
         assert "/speckit-specify login" in call_args[0][0][2]
 
     def test_dispatch_failure_returns_failed_status(self, tmp_path):
@@ -2205,7 +1932,7 @@ class TestCommandStep:
         step = CommandStep()
         ctx = StepContext(
             inputs={},
-            default_integration="claude",
+            default_integration="copilot",
             project_root=str(tmp_path),
         )
         config = {
@@ -2219,8 +1946,8 @@ class TestCommandStep:
         mock_result.stdout = ""
         mock_result.stderr = "API error"
 
-        with patch("specify_cli.workflows.step.command.shutil.which", return_value="/usr/local/bin/claude"), \
-             patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.workflows.step.command.shutil.which", return_value="/usr/local/bin/copilot"), \
+             patch("specify_cli.integrations.base.shutil.which", return_value="/usr/local/bin/copilot"), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
 
@@ -2240,7 +1967,7 @@ class TestPromptStep:
         step = PromptStep()
         ctx = StepContext(
             inputs={"file": "auth.py"},
-            default_integration="claude",
+            default_integration="copilot",
         )
         config = {
             "id": "review",
@@ -2251,7 +1978,7 @@ class TestPromptStep:
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["prompt"] == "Review auth.py for security issues"
-        assert result.output["integration"] == "claude"
+        assert result.output["integration"] == "copilot"
         assert result.output["dispatched"] is False
 
     def test_execute_non_string_integration_fails_cleanly(self):
@@ -2263,7 +1990,7 @@ class TestPromptStep:
         step = PromptStep()
         config = {
             "id": "p", "type": "prompt", "prompt": "do it",
-            "integration": ["claude"],
+            "integration": ["copilot"],
         }
         result = step.execute(config, StepContext())
         assert result.status == StepStatus.FAILED
@@ -2274,7 +2001,7 @@ class TestPromptStep:
         from specify_cli.workflows.base import StepContext
 
         step = PromptStep()
-        ctx = StepContext(default_integration="claude")
+        ctx = StepContext(default_integration="copilot")
         config = {
             "id": "review",
             "type": "prompt",
@@ -2291,7 +2018,7 @@ class TestPromptStep:
         from specify_cli.workflows.base import StepContext
 
         step = PromptStep()
-        ctx = StepContext(default_integration="claude", default_model="sonnet-4")
+        ctx = StepContext(default_integration="copilot", default_model="sonnet-4")
         config = {
             "id": "review",
             "type": "prompt",
@@ -2302,42 +2029,12 @@ class TestPromptStep:
             result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
 
-    def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
-        """When acli is installed, rovodev prompt dispatch succeeds via acli."""
-        from unittest.mock import patch, MagicMock
-        from specify_cli.workflows.step.prompt import PromptStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = PromptStep()
-        ctx = StepContext(
-            default_integration="rovodev",
-            project_root=str(tmp_path),
-        )
-        config = {
-            "id": "test",
-            "type": "prompt",
-            "prompt": "Explain this code",
-        }
-
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mock_result.stderr = ""
-
-        with patch("specify_cli.workflows.step.prompt.shutil.which",
-                    lambda name: "/usr/bin/acli" if name == "acli" else None), \
-             patch("subprocess.run", return_value=mock_result):
-            result = step.execute(config, ctx)
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["dispatched"] is True
-        assert result.output["exit_code"] == 0
 
     def test_try_dispatch_executes_the_resolved_executable(self, tmp_path):
         """argv[0] must be the shutil.which-resolved path, not the bare name.
 
         On Windows subprocess.run calls CreateProcess, which ignores PATHEXT, so
-        a bare `claude` installed as `claude.cmd` (the usual npm shim) raises
+        a bare `copilot` installed as `copilot.cmd` (the usual npm shim) raises
         WinError 2. That OSError is swallowed and reported as "CLI not found or
         not installed" even though the preflight which() just found it, while
         the `command` step -- which goes through
@@ -2348,10 +2045,10 @@ class TestPromptStep:
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
-        ctx = StepContext(default_integration="claude", project_root=str(tmp_path))
+        ctx = StepContext(default_integration="copilot", project_root=str(tmp_path))
         config = {"id": "test", "type": "prompt", "prompt": "hello"}
 
-        resolved = r"C:\tools\claude.CMD"
+        resolved = r"C:\tools\copilot.CMD"
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = ""
@@ -2375,7 +2072,7 @@ class TestPromptStep:
 
         step = PromptStep()
         ctx = StepContext(
-            default_integration="claude",
+            default_integration="copilot",
             project_root=str(tmp_path),
         )
         config = {
@@ -2389,7 +2086,7 @@ class TestPromptStep:
         mock_result.stdout = "Here is the explanation"
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.step.prompt.shutil.which", return_value="/usr/local/bin/claude"), \
+        with patch("specify_cli.workflows.step.prompt.shutil.which", return_value="/usr/local/bin/copilot"), \
              patch("subprocess.run", return_value=mock_result):
             result = step.execute(config, ctx)
 
@@ -2403,16 +2100,16 @@ class TestPromptStep:
         from specify_cli.workflows.step.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
-        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
+        monkeypatch.setenv("SPECKIT_INTEGRATION_COPILOT_EXECUTABLE", "/opt/copilot")
         seen_which: list[str] = []
 
         def fake_which(name: str) -> str | None:
             seen_which.append(name)
-            return name if name == "/opt/claude" else None
+            return name if name == "/opt/copilot" else None
 
         step = PromptStep()
         ctx = StepContext(
-            default_integration="claude",
+            default_integration="copilot",
             project_root=str(tmp_path),
         )
         config = {
@@ -2432,9 +2129,9 @@ class TestPromptStep:
 
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
-        assert seen_which[:2] == ["claude", "/opt/claude"]
+        assert seen_which[:2] == ["copilot", "/opt/copilot"]
         call_args = mock_run.call_args
-        assert call_args[0][0][0] == "/opt/claude"
+        assert call_args[0][0][0] == "/opt/copilot"
         assert call_args[0][0][2] == "Explain this code"
 
     def test_validate_missing_prompt(self):
@@ -2476,7 +2173,7 @@ class TestPromptStep:
         )
         assert errors == []
 
-    @pytest.mark.parametrize("bad", [["claude"], {"a": 1}, 5, True])
+    @pytest.mark.parametrize("bad", [["copilot"], {"a": 1}, 5, True])
     def test_validate_rejects_non_string_integration_and_model(self, bad):
         """A non-string 'integration'/'model' must be rejected at validation.
 
@@ -2523,7 +2220,7 @@ class TestPromptStep:
         assert res.status is StepStatus.FAILED
         assert "'integration' must be a string" in (res.error or "")
         res = step.execute(
-            {"id": "p", "prompt": "hi", "integration": "claude", "model": ["m"]},
+            {"id": "p", "prompt": "hi", "integration": "copilot", "model": ["m"]},
             StepContext(),
         )
         assert res.status is StepStatus.FAILED
@@ -2543,7 +2240,7 @@ class TestPromptStep:
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = PromptStep()
-        ctx = StepContext(default_integration="claude", default_model="sonnet")
+        ctx = StepContext(default_integration="copilot", default_model="sonnet")
         res = step.execute({"id": "p", "prompt": "hi", "integration": falsey}, ctx)
         assert res.status is StepStatus.FAILED, falsey
         assert "'integration' must be a string" in (res.error or ""), falsey
@@ -2612,7 +2309,7 @@ class TestPromptStep:
 
         monkeypatch.setattr(subprocess, "run", fail_if_called)
         step = PromptStep()
-        ctx = StepContext(inputs={}, default_integration="claude")
+        ctx = StepContext(inputs={}, default_integration="copilot")
         # A string/list raises TypeError and NaN raises ValueError inside
         # subprocess.run(); ``True`` would silently become a 1s timeout (bool
         # is an int subclass); a non-positive value reports an immediate
@@ -2621,14 +2318,14 @@ class TestPromptStep:
         for bad in ("30", True, float("nan"), 0, -5, ["30"], 10**400):
             with patch(
                 "specify_cli.workflows.step.prompt.shutil.which",
-                return_value="/opt/claude",
+                return_value="/opt/copilot",
             ):
                 result = step.execute(
                     {
                         "id": "p",
                         "type": "prompt",
                         "prompt": "hi",
-                        "integration": "claude",
+                        "integration": "copilot",
                         "timeout": bad,
                     },
                     ctx,
@@ -3025,322 +2722,6 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
     monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
 
 
-class TestInitStep:
-    """Test the init step type."""
-
-    def test_docstring_lists_every_valid_script_type(self):
-        # The `script` field docstring must not contradict the step's own
-        # VALID_SCRIPT_TYPES (which includes 'py'); validate() accepts all three.
-        from specify_cli.workflows.step.init import InitStep, VALID_SCRIPT_TYPES
-
-        for script_type in VALID_SCRIPT_TYPES:
-            assert f"``{script_type}``" in InitStep.__doc__
-
-    def test_builds_here_argv_and_bootstraps(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        config = {"id": "bootstrap", "here": True, "script": "sh"}
-        result = step.execute(config, ctx)
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["exit_code"] == 0
-        argv = result.output["argv"]
-        assert argv[0] == "init"
-        assert "--here" in argv
-        assert "--integration" in argv and "copilot" in argv
-        assert "--ignore-agent-tools" in argv
-        assert (tmp_path / ".specify").is_dir()
-
-    def test_explicit_null_ignore_agent_tools_keeps_documented_default(
-        self, tmp_path
-    ):
-        """A bare ``ignore_agent_tools:`` must keep the documented default.
-
-        The class docstring says "Because workflows run unattended, the step
-        defaults to ``--ignore-agent-tools``" and the field docs say "defaults to
-        ``true``". But ``config.get(key, True)`` applies the default only when the
-        key is ABSENT — a bare ``ignore_agent_tools:`` in YAML parses to None,
-        which ``_resolve_bool`` turned into False, dropping the flag and
-        re-enabling the agent-CLI presence check for an unattended run.
-        """
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "here": True,
-                "script": "sh",
-                "ignore_agent_tools": None,
-            },
-            ctx,
-        )
-
-        assert result.status == StepStatus.COMPLETED
-        assert "--ignore-agent-tools" in result.output["argv"]
-
-    def test_explicit_false_ignore_agent_tools_is_honoured(self, tmp_path):
-        """An explicit ``false`` must still opt in to the agent-CLI check."""
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "here": True,
-                "script": "sh",
-                "ignore_agent_tools": False,
-            },
-            ctx,
-        )
-
-        assert "--ignore-agent-tools" not in result.output["argv"]
-
-    def test_default_integration_falls_back_to_workflow_default(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"}, ctx
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["integration"] == "copilot"
-
-    def test_default_integration_honors_env_var(self, tmp_path, monkeypatch):
-        # With no step-level and no workflow-level default, the resolved
-        # SPECKIT_INTEGRATION_DEFAULT value must drive both output.integration
-        # and the argv passed to init (guards against reverting to the constant).
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
-        step = InitStep()
-        ctx = StepContext(project_root=str(tmp_path))
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"}, ctx
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["integration"] == "gemini"
-        argv = result.output["argv"]
-        assert "--integration" in argv and "gemini" in argv
-
-    def test_project_name_creates_subdirectory(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "project": "demo",
-                "script": "sh",
-            },
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert (tmp_path / "demo" / ".specify").is_dir()
-
-    def test_invalid_integration_fails(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(project_root=str(tmp_path))
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "here": True,
-                "integration": "no-such-agent",
-                "script": "sh",
-            },
-            ctx,
-        )
-        assert result.status == StepStatus.FAILED
-        assert result.output["exit_code"] != 0
-        assert result.error is not None
-
-    def test_failed_init_surfaces_inits_own_message(self, tmp_path):
-        """A failing init step must report init's diagnostics, not 'SystemExit: 1'.
-
-        `typer.Exit(n)` — how `specify init` reports every ordinary failure —
-        surfaces through `CliRunner` as `result.exception = SystemExit(n)`, so
-        the unexpected-crash branch fired on routine errors too. `init` prints
-        through Rich to stdout, leaving `result.stderr` empty, so the
-        synthesized "SystemExit: 1" became the whole of stderr and preempted
-        the `stderr.strip() or stdout.strip()` fallback — stranding the real
-        message (here, the list of valid integrations) in stdout.
-        """
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        result = InitStep().execute(
-            {
-                "id": "bootstrap",
-                "here": True,
-                "integration": "no-such-agent",
-                "script": "sh",
-            },
-            StepContext(project_root=str(tmp_path)),
-        )
-
-        assert result.status == StepStatus.FAILED
-        assert result.error is not None
-        assert result.error.strip() != "SystemExit: 1"
-
-        # The real diagnostic reaches the caller...
-        collapsed = " ".join(result.error.split())
-        assert "no-such-agent" in collapsed or "Unknown" in collapsed, collapsed
-
-        # ...and reaches a downstream step reading steps.<id>.output.stderr.
-        # Asserting only "not the old sentinel" was too weak: an EMPTY stderr
-        # satisfies that while still carrying no diagnostic at all, which is
-        # exactly what dropping the synthesized detail left behind under
-        # click >= 8.2 (separate streams, init prints through Rich to stdout).
-        stderr = " ".join(result.output["stderr"].split())
-        assert stderr, "output.stderr must not be empty for a failed init"
-        assert stderr != "SystemExit: 1"
-        assert "no-such-agent" in stderr or "Unknown" in stderr, stderr
-
-    def test_unexpected_crash_still_reports_its_exception(self, monkeypatch, tmp_path):
-        """The branch's original purpose is preserved for a genuine crash.
-
-        Only `SystemExit` is now excluded; any other exception escaping the
-        runner must still be surfaced, since nothing else would describe it.
-        """
-        from specify_cli.workflows.step.init import InitStep
-        import typer.testing
-
-        class _Result:
-            exit_code = 1
-            output = ""
-            stderr = ""
-            exception = RuntimeError("boom inside init")
-
-        class _Runner:
-            def __init__(self, *a, **k):
-                pass
-
-            def invoke(self, *a, **k):
-                return _Result()
-
-        monkeypatch.setattr(typer.testing, "CliRunner", _Runner)
-
-        from specify_cli.workflows.base import StepContext
-
-        _code, _stdout, stderr = InitStep()._run_init(
-            ["init", "demo"], StepContext(project_root=str(tmp_path))
-        )
-
-        assert "RuntimeError: boom inside init" in stderr
-
-    def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        (tmp_path / "existing.txt").write_text("data")
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"},
-            ctx,
-        )
-        assert result.status == StepStatus.FAILED
-        assert "force: true" in (result.error or "")
-        assert not (tmp_path / ".specify").exists()
-
-    def test_engine_owned_dirs_do_not_trigger_non_empty_check(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        # Simulate the engine creating its run-state directory before steps run
-        (tmp_path / ".specify" / "workflows" / "runs" / "abc123").mkdir(
-            parents=True
-        )
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"},
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        # Verify --force was implicitly added
-        assert "--force" in result.output["argv"]
-
-    def test_default_integration_when_none_provided(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        # No default_integration on context either
-        ctx = StepContext(project_root=str(tmp_path))
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"},
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["integration"] == "copilot"
-
-    def test_integration_options_passed_through(self, tmp_path):
-        from specify_cli.workflows.step.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "here": True,
-                "script": "sh",
-                "integration": "copilot",
-                "integration_options": "--skills",
-            },
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert "--integration-options" in result.output["argv"]
-        assert "--skills" in result.output["argv"]
-        assert result.output["integration_options"] == "--skills"
-
-    def test_validate_rejects_bad_script(self):
-        from specify_cli.workflows.step.init import InitStep
-
-        step = InitStep()
-        errors = step.validate({"id": "bootstrap", "script": "bogus"})
-        assert any("'script' must be 'sh' or 'ps'" in e for e in errors)
-
-    def test_validate_accepts_valid(self):
-        from specify_cli.workflows.step.init import InitStep
-
-        step = InitStep()
-        assert step.validate({"id": "bootstrap", "script": "sh"}) == []
 
 
 class TestGateStep:
@@ -5751,8 +5132,8 @@ steps:
     @pytest.mark.parametrize(
         "field, bad_value",
         [
-            ("integration", ["claude"]),
-            ("integration", {"name": "claude"}),
+            ("integration", ["copilot"]),
+            ("integration", {"name": "copilot"}),
             ("integration", False),
             ("model", ["gpt-5"]),
             ("model", {"name": "gpt-5"}),
@@ -5792,7 +5173,7 @@ steps:
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
         defaults = {
-            "integration": "claude",
+            "integration": "copilot",
             "model": "gpt-5",
             "options": {"max_tokens": 8000},
         }
@@ -5955,7 +5336,7 @@ workflow:
 requires:
   speckit_version: ">=0.7.2"
   integrations:
-    any: ["claude", "gemini"]
+    any: ["copilot", "gemini"]
 steps:
   - id: step-one
     command: speckit.specify
@@ -5971,7 +5352,7 @@ workflow:
   id: "test"
   name: "Test"
   version: "1.0.0"
-requires: "claude"
+requires: "copilot"
 steps:
   - id: step-one
     command: speckit.specify
@@ -6484,7 +5865,7 @@ class TestWorkflowEngine:
     @pytest.mark.parametrize(
         ("field", "value"),
         [
-            ("integration", ["claude"]),
+            ("integration", ["copilot"]),
             ("model", {"name": "gpt-5"}),
             ("options", ["max_tokens"]),
         ],
@@ -6543,7 +5924,7 @@ workflow:
   id: "simple"
   name: "Simple"
   version: "1.0.0"
-  integration: claude
+  integration: copilot
 inputs:
   name:
     type: string
@@ -6782,8 +6163,8 @@ inputs:
     default: "auto"
 """)
         engine = WorkflowEngine(project_dir)
-        resolved = engine._resolve_inputs(definition, {"integration": "claude"})
-        assert resolved["integration"] == "claude"
+        resolved = engine._resolve_inputs(definition, {"integration": "copilot"})
+        assert resolved["integration"] == "copilot"
 
     def test_integration_explicit_auto_resolves_like_default(self, project_dir):
         """Passing ``integration=auto`` explicitly must resolve the sentinel,
@@ -6875,8 +6256,8 @@ inputs:
                 {
                     "version": "0.8.3",
                     "integration_state_schema": 1,
-                    "default_integration": "claude",
-                    "installed_integrations": ["claude", "copilot"],
+                    "default_integration": "copilot",
+                    "installed_integrations": ["copilot", "copilot"],
                     "integration_settings": {},
                 }
             ),
@@ -6896,7 +6277,7 @@ inputs:
 """)
         engine = WorkflowEngine(project_dir)
         resolved = engine._resolve_inputs(definition, {})
-        assert resolved["integration"] == "claude"
+        assert resolved["integration"] == "copilot"
 
     def test_integration_auto_rejects_future_state_schema(self, project_dir):
         """`integration: auto` must not silently use a state file written by a newer
@@ -6912,8 +6293,8 @@ inputs:
                 {
                     "version": "99.0.0",
                     "integration_state_schema": INTEGRATION_STATE_SCHEMA + 1,
-                    "default_integration": "claude",
-                    "installed_integrations": ["claude"],
+                    "default_integration": "copilot",
+                    "installed_integrations": ["copilot"],
                     "integration_settings": {},
                 }
             ),
@@ -7013,7 +6394,7 @@ inputs:
   integration:
     type: string
     default: "auto"
-    enum: ["copilot", "claude", "gemini"]
+    enum: ["copilot", "copilot", "gemini"]
 steps:
   - id: noop
     type: gate
@@ -7605,7 +6986,7 @@ workflow:
   id: "command-stamp"
   name: "Command Stamp"
   version: "1.0.0"
-  integration: claude
+  integration: copilot
 steps:
   - id: tag-artifact
     command: speckit.specify
@@ -8037,7 +7418,7 @@ class TestWorkflowDispatchDefaultExecution:
         "defaults",
         [
             {
-                "integration": "claude",
+                "integration": "copilot",
                 "model": "gpt-5",
                 "options": {"max_tokens": 8000},
             },
@@ -9191,7 +8572,7 @@ class TestWorkflowRegistry:
         """A save() failure during remove() must not leave the in-memory registry
         out of sync with the (unchanged) file on disk, mirroring add()'s rollback."""
         from specify_cli.workflows.catalog import WorkflowRegistry
-        import specify_cli.workflows.catalog as catalog_mod
+        import specify_cli.workflows.catalog._domain as catalog_mod
 
         registry = WorkflowRegistry(project_dir)
         registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
@@ -9321,808 +8702,6 @@ class TestWorkflowRegistry:
 
 # ===== Workflow Catalog Tests =====
 
-class TestWorkflowCatalog:
-    """Test WorkflowCatalog catalog resolution."""
-
-    @pytest.fixture(params=["workflow", "step"])
-    def removal_catalog(self, request, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        kind = request.param
-        catalog_cls, error = (
-            (WorkflowCatalog, WorkflowValidationError)
-            if kind == "workflow" else (StepCatalog, StepValidationError)
-        )
-        env_key = f"SPECKIT_{kind.upper()}_CATALOG_URL"
-        monkeypatch.delenv(env_key, raising=False)
-        config = project_dir / ".specify" / f"{kind}-catalogs.yml"
-        return catalog_cls(project_dir), error, config, env_key
-
-    @pytest.mark.parametrize("index,original_index", [(0, 2), (1, 4), (2, 3), (3, 1)])
-    def test_remove_catalog_uses_listed_position(
-        self, removal_catalog, index, original_index
-    ):
-        catalog, _, config, _ = removal_catalog
-        data = {"notes": "keep", "catalogs": [
-            {"name": "skipped", "url": "  "},
-            {"name": "duplicate", "url": "https://example.com/low.json", "priority": 10},
-            {"name": "duplicate", "url": "https://example.com/first.json", "priority": "2"},
-            {"url": "https://example.com/unnamed.json"},
-            {"name": "duplicate", "url": "https://example.com/tied.json", "priority": 2},
-        ]}
-        config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        selected = catalog.get_catalog_configs()[index]
-        assert selected["url"] == data["catalogs"][original_index]["url"]
-
-        assert catalog.remove_catalog(index) == selected["name"]
-
-        data["catalogs"].pop(original_index)
-        assert yaml.safe_load(config.read_text(encoding="utf-8")) == data
-
-    @pytest.mark.parametrize("index", [-1, 1])
-    def test_remove_catalog_bounds_use_visible_entries(self, removal_catalog, index):
-        catalog, error, config, _ = removal_catalog
-        config.write_text(
-            "# keep this comment\ncatalogs:\n  - name: skipped\n"
-            "  - url: https://example.com/only.json\n", encoding="utf-8",
-        )
-        before = config.read_bytes()
-        with pytest.raises(error, match="out of range"):
-            catalog.remove_catalog(index)
-        assert config.read_bytes() == before
-
-    def test_remove_catalog_refuses_environment_source(self, removal_catalog, monkeypatch):
-        catalog, error, config, env_key = removal_catalog
-        catalog.add_catalog("https://example.com/project.json", "project")
-        before = config.read_bytes()
-        monkeypatch.setenv(env_key, " https://example.com/override.json ")
-        assert catalog.get_catalog_configs()[0]["name"] == "env-override"
-
-        with pytest.raises(error, match=env_key) as exc:
-            catalog.remove_catalog(0)
-        assert "Unset" in str(exc.value)
-        assert config.read_bytes() == before
-
-    def test_remove_catalog_ignores_blank_environment_override(self, removal_catalog, monkeypatch):
-        catalog, _, config, env_key = removal_catalog
-        catalog.add_catalog("https://example.com/project.json", "project")
-        monkeypatch.setenv(env_key, " \t ")
-        assert catalog.remove_catalog(0) == "project"
-        assert yaml.safe_load(config.read_text(encoding="utf-8"))["catalogs"] == []
-
-    @pytest.mark.parametrize("entry", ["invalid", {"name": "no-url"}, {
-        "url": "https://example.com/invalid.json", "priority": "invalid",
-    }])
-    def test_remove_catalog_rejects_unlistable_config(self, removal_catalog, entry):
-        catalog, error, config, _ = removal_catalog
-        config.write_text(yaml.safe_dump({"catalogs": [entry]}), encoding="utf-8")
-        before = config.read_bytes()
-        with pytest.raises(error):
-            catalog.get_catalog_configs()
-        with pytest.raises(error):
-            catalog.remove_catalog(0)
-        assert config.read_bytes() == before
-
-    @pytest.mark.parametrize("catalog_type", ["workflow", "step"])
-    def test_non_mapping_cache_metadata_is_invalid(
-        self, project_dir, catalog_type
-    ):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        catalog_cls = WorkflowCatalog if catalog_type == "workflow" else StepCatalog
-        catalog = catalog_cls(project_dir)
-        _, metadata_path = catalog._get_cache_paths(
-            f"https://example.com/{catalog_type}.json"
-        )
-        metadata_path.parent.mkdir(parents=True, exist_ok=True)
-        metadata_path.write_text("[]", encoding="utf-8")
-
-        assert catalog._is_url_cache_valid(
-            f"https://example.com/{catalog_type}.json"
-        ) is False
-
-    def test_non_mapping_cached_workflow_catalog_is_refetched(
-        self, project_dir, monkeypatch
-    ):
-        import io
-
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.catalog import (
-            WorkflowCatalog,
-            WorkflowCatalogEntry,
-        )
-
-        url = "https://example.com/workflows.json"
-        catalog = WorkflowCatalog(project_dir)
-        cache_path, metadata_path = catalog._get_cache_paths(url)
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text("[]", encoding="utf-8")
-        metadata_path.write_text(
-            json.dumps({"fetched_at": 4_102_444_800}),
-            encoding="utf-8",
-        )
-
-        payload = {"schema_version": "1.0", "workflows": {}}
-
-        class _FakeResponse(io.BytesIO):
-            def geturl(self):
-                return url
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(
-                json.dumps(payload).encode("utf-8")
-            ),
-        )
-        entry = WorkflowCatalogEntry(
-            url=url,
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-
-        assert catalog._fetch_single_catalog(entry) == payload
-
-    @pytest.mark.parametrize("catalog_type", ["workflow", "step"])
-    def test_non_utf8_cached_catalog_is_refetched(
-        self, project_dir, monkeypatch, catalog_type
-    ):
-        import io
-
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowCatalogEntry
-        from specify_cli.workflows.step.catalog import StepCatalog, StepCatalogEntry
-
-        catalog_cls = WorkflowCatalog if catalog_type == "workflow" else StepCatalog
-        entry_cls = (
-            WorkflowCatalogEntry
-            if catalog_type == "workflow"
-            else StepCatalogEntry
-        )
-        payload_key = "workflows" if catalog_type == "workflow" else "steps"
-        url = f"https://example.com/{catalog_type}.json"
-        catalog = catalog_cls(project_dir)
-        cache_path, metadata_path = catalog._get_cache_paths(url)
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_bytes(b"\xff\xfe")
-        metadata_path.write_text(
-            json.dumps({"fetched_at": 4_102_444_800}),
-            encoding="utf-8",
-        )
-        payload = {"schema_version": "1.0", payload_key: {}}
-
-        class _FakeResponse(io.BytesIO):
-            def geturl(self):
-                return url
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(
-                json.dumps(payload).encode("utf-8")
-            ),
-        )
-        entry = entry_cls(
-            url=url,
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-
-        assert catalog._fetch_single_catalog(entry) == payload
-        assert json.loads(cache_path.read_text(encoding="utf-8")) == payload
-
-    def test_non_mapping_stale_workflow_catalog_is_rejected(
-        self, project_dir, monkeypatch
-    ):
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.catalog import (
-            WorkflowCatalog,
-            WorkflowCatalogEntry,
-            WorkflowCatalogError,
-        )
-
-        url = "https://example.com/workflows.json"
-        catalog = WorkflowCatalog(project_dir)
-        cache_path, _ = catalog._get_cache_paths(url)
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text("[]", encoding="utf-8")
-
-        def _offline(url, timeout=30, redirect_validator=None):
-            raise OSError("offline")
-
-        monkeypatch.setattr(auth_http, "open_url", _offline)
-        entry = WorkflowCatalogEntry(
-            url=url,
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-
-        with pytest.raises(WorkflowCatalogError, match="Failed to fetch catalog"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
-
-    def test_search_with_non_string_fields(self, project_dir, monkeypatch):
-        """Non-string workflow fields (null/int name/description) must not
-        raise TypeError in search — StepCatalog.search already coerces these."""
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        catalog = WorkflowCatalog(project_dir)
-        monkeypatch.setattr(catalog, "_get_merged_workflows", lambda **kw: {
-            "42": {
-                "id": 42,
-                "name": None,
-                "description": 99,
-                "_catalog_name": "test",
-                "_install_allowed": True,
-            },
-        })
-
-        assert len(catalog.search()) == 1
-        assert len(catalog.search(query="42")) == 1
-        assert len(catalog.search(query="missing")) == 0
-
-    def test_default_catalogs(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.setattr(Path, "home", lambda: project_dir)
-        monkeypatch.delenv("SPECKIT_WORKFLOW_CATALOG_URL", raising=False)
-        catalog = WorkflowCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 2
-        assert entries[0].name == "default"
-        assert entries[1].name == "community"
-
-    def test_env_var_override(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        monkeypatch.setenv("SPECKIT_WORKFLOW_CATALOG_URL", "https://example.com/catalog.json")
-        catalog = WorkflowCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 1
-        assert entries[0].name == "env-override"
-        assert entries[0].url == "https://example.com/catalog.json"
-
-    def test_project_level_config(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "custom",
-                "url": "https://example.com/wf-catalog.json",
-                "priority": 1,
-                "install_allowed": True,
-            }]
-        }))
-
-        catalog = WorkflowCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 1
-        assert entries[0].name == "custom"
-
-    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
-    def test_falsy_non_mapping_config_rejected(self, project_dir, body):
-        """A FALSY non-mapping top-level config ([], false, 0, '') must raise,
-        like a truthy non-mapping (5, a bare list) already does. The previous
-        ``yaml.safe_load(...) or {}`` coerced these to {} and silently swallowed
-        them, diverging from the truthy case."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
-            catalog._load_catalog_config(config_path)
-
-    @pytest.mark.parametrize("body", ["catalogs: {}\n", "catalogs: ''\n", "catalogs: 0\n", "catalogs: false\n"])
-    def test_falsy_non_list_catalogs_rejected(self, project_dir, body):
-        """A FALSY non-list ``catalogs:`` value must raise, like a truthy one
-        (``catalogs: 5``) already does. The shape check sat behind the emptiness
-        check, so these were silently swallowed as "no catalogs"."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="'catalogs' must be a list"):
-            catalog._load_catalog_config(config_path)
-
-    @pytest.mark.parametrize("body", ["catalogs:\n", "catalogs: []\n"])
-    def test_absent_or_empty_catalogs_is_noop(self, project_dir, body):
-        """An explicit ``catalogs:`` null or an empty list stays a valid no-op —
-        the layer contributes nothing and resolution falls through."""
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-        catalog = WorkflowCatalog(project_dir)
-        assert catalog._load_catalog_config(config_path) is None
-
-    @pytest.mark.parametrize("body", ["", "# only a comment\n", "null\n", "~\n"])
-    def test_empty_or_null_config_is_noop(self, project_dir, body):
-        """An empty document, comment-only file, or explicit top-level null is a
-        valid no-op: the loader returns None so that config layer is skipped and
-        get_active_catalogs falls through to the next one. It must NOT be
-        confused with a falsy non-mapping, which raises."""
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-        catalog = WorkflowCatalog(project_dir)
-        assert catalog._load_catalog_config(config_path) is None
-
-    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
-    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
-        """`priority: true` must not be silently coerced to 1, and `priority: .inf`
-        must not crash with an uncaught OverflowError — both raise a clean
-        validation error (parity with the base CatalogStackBase loader)."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "bad",
-                "url": "https://example.com/wf-catalog.json",
-                "priority": bad_priority,
-                "install_allowed": True,
-            }]
-        }))
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="Invalid priority|expected integer"):
-            catalog.get_active_catalogs()
-
-    def test_validate_url_http_rejected(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="HTTPS"):
-            catalog._validate_catalog_url("http://evil.com/catalog.json")
-
-    def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        catalog = WorkflowCatalog(project_dir)
-        # Should not raise
-        catalog._validate_catalog_url("http://localhost:8080/catalog.json")
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "https://[::1",              # unterminated IPv6 bracket
-            "https://[not-an-ip]/x",     # bracketed non-IP host
-            "https://example.com:notaport/catalog.json",
-        ],
-    )
-    def test_validate_url_malformed_raises_validation_error(self, project_dir, url):
-        """A malformed authority must raise WorkflowValidationError, not leak a
-        raw ValueError.
-
-        ``urlparse``/``.hostname`` raise ValueError on a malformed IPv6
-        authority. The command handler only catches WorkflowValidationError,
-        so a raw ValueError would surface as an uncaught traceback instead of a
-        clean 'Error:' message + exit 1. Mirrors specify_cli.catalogs (#3435).
-        """
-        from specify_cli.workflows.catalog import (
-            WorkflowCatalog,
-            WorkflowValidationError,
-        )
-
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="malformed"):
-            catalog._validate_catalog_url(url)
-
-    def test_fetch_malformed_redirect_target_raises_catalog_error(
-        self, project_dir, monkeypatch
-    ):
-        """A malformed post-redirect URL must raise WorkflowCatalogError, not a
-        raw ValueError.
-
-        The fetch path re-validates ``resp.geturl()`` after following redirects,
-        so a hostile/broken redirect to a malformed authority
-        (``https://[::1``) hits ``urlparse``/``.hostname`` and raises
-        ``ValueError``. Without the guard that ValueError is re-wrapped by the
-        broad ``except`` as ``Failed to fetch catalog ...: Invalid IPv6 URL``;
-        the guard turns it into a clean ``... malformed URL ...`` refusal. The
-        initial ``entry.url`` is valid so validation only trips on the redirect
-        target. Mirrors specify_cli.catalogs (#3435).
-        """
-        from specify_cli.workflows.catalog import (
-            WorkflowCatalog,
-            WorkflowCatalogEntry,
-            WorkflowCatalogError,
-        )
-        from specify_cli.authentication import http as auth_http
-
-        class _FakeResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self):
-                return b"{}"
-
-            def geturl(self):
-                # A redirect landing on a malformed IPv6 authority.
-                return "https://[::1"
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
-        )
-
-        catalog = WorkflowCatalog(project_dir)
-        entry = WorkflowCatalogEntry(
-            url="https://example.com/catalog.json",
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-        # A fresh project_dir has no cache to fall back to, so the error
-        # propagates instead of being masked by a stale-cache read.
-        with pytest.raises(WorkflowCatalogError, match="malformed"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
-
-    def test_fetch_validates_every_redirect_hop(self, project_dir, monkeypatch):
-        """A redirect_validator is passed to open_url and rejects a non-HTTPS
-        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
-        terminal-URL-only check would miss. Mirrors presets/extensions
-        (#3523 / #3524)."""
-        from specify_cli.workflows.catalog import (
-            WorkflowCatalog,
-            WorkflowCatalogEntry,
-            WorkflowCatalogError,
-        )
-        from specify_cli.authentication import http as auth_http
-
-        captured = {}
-
-        def fake_open(url, timeout=30, redirect_validator=None):
-            captured["rv"] = redirect_validator
-            # Simulate the hop urllib validates before following the redirect.
-            redirect_validator(
-                "https://good.example/catalog.json", "http://evil.test/hop"
-            )
-            raise AssertionError("redirect_validator should have raised")
-
-        monkeypatch.setattr(auth_http, "open_url", fake_open)
-
-        catalog = WorkflowCatalog(project_dir)
-        entry = WorkflowCatalogEntry(
-            url="https://good.example/catalog.json",
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-        with pytest.raises(WorkflowCatalogError, match="HTTPS"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
-        assert captured["rv"] is not None
-
-    def test_fetch_rejects_oversized_catalog_response(
-        self, project_dir, monkeypatch
-    ):
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows import catalog as catalog_module
-        from specify_cli.workflows.catalog import (
-            WorkflowCatalog,
-            WorkflowCatalogEntry,
-            WorkflowCatalogError,
-        )
-
-        monkeypatch.setattr(catalog_module, "MAX_JSON_CATALOG_BYTES", 32)
-        requested_sizes: list[int] = []
-
-        class _FakeResponse:
-            def __init__(self):
-                self.body = b"x" * 64
-                self.offset = 0
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def geturl(self):
-                return "https://example.com/catalog.json"
-
-            def read(self, size=-1):
-                requested_sizes.append(size)
-                assert size >= 0
-                chunk_size = min(size, 7)
-                chunk = self.body[self.offset : self.offset + chunk_size]
-                self.offset += len(chunk)
-                return chunk
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
-        )
-
-        catalog = WorkflowCatalog(project_dir)
-        entry = WorkflowCatalogEntry(
-            url="https://example.com/catalog.json",
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-
-        with pytest.raises(WorkflowCatalogError, match="exceeds maximum size"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
-
-        assert requested_sizes
-        assert not catalog.cache_dir.exists()
-
-    def test_add_catalog(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/new-catalog.json", "my-catalog")
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        assert config_path.exists()
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-        assert data["catalogs"][0]["url"] == "https://example.com/new-catalog.json"
-
-    def test_add_catalog_with_existing_inf_priority(self, project_dir):
-        """add_catalog() derives the new priority from existing ones via
-        _coerce_priority; an existing `priority: .inf` must not crash it
-        (int(float('inf')) is an OverflowError) — it is treated as 0 and the add
-        succeeds."""
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "existing",
-                "url": "https://a.example.com/c.json",
-                "priority": float("inf"),
-                "install_allowed": True,
-            }]
-        }))
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://b.example.com/c.json", "new")
-
-        data = yaml.safe_load(config_path.read_text())
-        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
-        assert new["priority"] == 1  # max(inf coerced to 0) + 1
-
-    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        catalog = WorkflowCatalog(project_dir)
-        assert (
-            catalog.add_catalog("https://example.com/catalog.json", "mine")
-            == "added"
-        )
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        data["catalogs"][0]["url"] = "  https://example.com/catalog.json  "
-        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
-        original = config_path.read_bytes()
-
-        assert (
-            catalog.add_catalog("https://example.com/catalog.json", "mine")
-            == "unchanged"
-        )
-        assert config_path.read_bytes() == original
-
-        with pytest.raises(WorkflowValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/catalog.json", "different")
-
-    def test_remove_catalog(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/c1.json", "first")
-        catalog.add_catalog("https://example.com/c2.json", "second")
-
-        removed = catalog.remove_catalog(0)
-        assert removed == "first"
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-
-    def test_remove_catalog_invalid_index(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/c1.json")
-
-        with pytest.raises(WorkflowValidationError, match="out of range"):
-            catalog.remove_catalog(5)
-
-    @pytest.mark.parametrize("bad", [[], False, 0, ""])
-    def test_remove_catalog_rejects_falsy_non_mapping_config(
-        self, project_dir, bad
-    ):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
-
-        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
-            WorkflowCatalog(project_dir).remove_catalog(0)
-
-    def test_get_catalog_configs(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog
-
-        catalog = WorkflowCatalog(project_dir)
-        configs = catalog.get_catalog_configs()
-        assert len(configs) == 2
-        assert configs[0]["name"] == "default"
-        assert isinstance(configs[0]["install_allowed"], bool)
-
-    def test_load_catalog_config_non_dict_yaml_raises(self, project_dir):
-        """A YAML catalog config that is a list (not a mapping) must raise WorkflowValidationError."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text("- item1\n- item2\n", encoding="utf-8")
-
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
-            catalog.get_active_catalogs()
-
-    def test_add_catalog_malformed_yaml_raises(self, project_dir):
-        """A malformed YAML config file must raise WorkflowValidationError when adding a catalog."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(": invalid: yaml: {\n", encoding="utf-8")
-
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
-            catalog.add_catalog("https://example.com/new.json")
-
-    def test_remove_catalog_malformed_yaml_raises(self, project_dir):
-        """A malformed YAML config file must raise WorkflowValidationError when removing a catalog."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/c1.json", "first")
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(": bad: yaml: {\n", encoding="utf-8")
-
-        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
-            catalog.remove_catalog(0)
-
-    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        """An OSError on write must be wrapped as WorkflowValidationError."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-        import builtins
-
-        catalog = WorkflowCatalog(project_dir)
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
-            catalog.add_catalog("https://example.com/new-catalog.json", "my-catalog")
-
-    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        """An OSError on write must be wrapped as WorkflowValidationError."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-        import builtins
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/c1.json", "first")
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
-            catalog.remove_catalog(0)
-
-    def test_oversized_workflow_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
-        """A healthy catalog still works after an oversized one was rejected."""
-        from specify_cli.workflows.catalog import (
-            WorkflowCatalog,
-            WorkflowCatalogEntry,
-            WorkflowCatalogError,
-        )
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows import catalog as catalog_module
-
-        monkeypatch.setattr(catalog_module, "MAX_JSON_CATALOG_BYTES", 512)
-
-        call_count = [0]
-
-        class _OversizedResponse:
-            def __init__(self):
-                self._data = b"x" * 1024
-                self._pos = 0
-
-            def read(self, n=-1):
-                if n < 0:
-                    chunk = self._data[self._pos:]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + n]
-                self._pos += len(chunk)
-                return chunk
-
-            def geturl(self):
-                return "https://bad.example.com/catalog.json"
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                pass
-
-        class _HealthyResponse:
-            def __init__(self):
-                self._data = b'{"workflows": {}}'
-                self._pos = 0
-
-            def read(self, n=-1):
-                if n < 0:
-                    chunk = self._data[self._pos:]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + n]
-                self._pos += len(chunk)
-                return chunk
-
-            def geturl(self):
-                return "https://good.example.com/catalog.json"
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                pass
-
-        def fake_open(url, timeout=30, redirect_validator=None):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _OversizedResponse()
-            return _HealthyResponse()
-
-        monkeypatch.setattr(auth_http, "open_url", fake_open)
-
-        catalog = WorkflowCatalog(project_dir)
-
-        bad_entry = WorkflowCatalogEntry(
-            url="https://bad.example.com/catalog.json",
-            name="bad",
-            priority=1,
-            install_allowed=True,
-        )
-        with pytest.raises(WorkflowCatalogError, match="exceeds maximum size"):
-            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
-
-        good_entry = WorkflowCatalogEntry(
-            url="https://good.example.com/catalog.json",
-            name="good",
-            priority=1,
-            install_allowed=True,
-        )
-        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
-        assert isinstance(result, dict)
 
 
 # ===== Integration Test =====
@@ -10141,7 +8720,7 @@ workflow:
   id: "e2e-test"
   name: "E2E Test"
   version: "1.0.0"
-  integration: claude
+  integration: copilot
 inputs:
   feature:
     type: string
@@ -10389,659 +8968,6 @@ class TestStepRegistryCustom:
 
 # ===== Step Catalog Tests =====
 
-class TestStepCatalog:
-    """Test StepCatalog catalog resolution."""
-
-    # -- Config shape guards ----------------------------------------------
-    # StepCatalog._load_catalog_config is a duplicated twin of
-    # WorkflowCatalog._load_catalog_config, so it needs its own coverage: a
-    # regression in one loader would not be caught by the other's tests.
-
-    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
-    def test_falsy_non_mapping_config_rejected(self, project_dir, body):
-        """A FALSY non-mapping top level had the same ``or {}`` coercion, which
-        bypassed the isinstance guard. It must raise like a truthy non-mapping."""
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="expected a mapping"):
-            catalog._load_catalog_config(config_path)
-
-    @pytest.mark.parametrize(
-        "body", ["catalogs: {}\n", "catalogs: ''\n", "catalogs: 0\n", "catalogs: false\n"]
-    )
-    def test_falsy_non_list_catalogs_rejected(self, project_dir, body):
-        """...and the same nested guard: a FALSY non-list ``catalogs:`` value must
-        raise rather than being swallowed as "no catalogs"."""
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="'catalogs' must be a list"):
-            catalog._load_catalog_config(config_path)
-
-    @pytest.mark.parametrize(
-        "body",
-        ["", "# only a comment\n", "null\n", "~\n", "catalogs:\n", "catalogs: []\n"],
-    )
-    def test_empty_or_null_config_is_noop(self, project_dir, body):
-        """An empty document, explicit null, or absent/empty ``catalogs:`` stays a
-        valid no-op — the layer contributes nothing and resolution falls
-        through."""
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text(body, encoding="utf-8")
-        catalog = StepCatalog(project_dir)
-        assert catalog._load_catalog_config(config_path) is None
-
-    def test_default_catalogs(self, project_dir, monkeypatch):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        monkeypatch.setattr(Path, "home", lambda: project_dir)
-        monkeypatch.delenv("SPECKIT_STEP_CATALOG_URL", raising=False)
-        catalog = StepCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 2
-        assert entries[0].name == "default"
-        assert entries[1].name == "community"
-
-    def test_env_var_override(self, project_dir, monkeypatch):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        monkeypatch.setenv("SPECKIT_STEP_CATALOG_URL", "https://example.com/step-catalog.json")
-        catalog = StepCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 1
-        assert entries[0].name == "env-override"
-        assert entries[0].url == "https://example.com/step-catalog.json"
-
-    def test_project_level_config(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "custom",
-                "url": "https://example.com/step-catalog.json",
-                "priority": 1,
-                "install_allowed": True,
-            }]
-        }))
-
-        catalog = StepCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 1
-        assert entries[0].name == "custom"
-
-    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
-    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
-        """`priority: true`/`.inf` in a step-catalog config raise a clean
-        validation error instead of coercing to 1 / crashing with OverflowError."""
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "bad",
-                "url": "https://example.com/step-catalog.json",
-                "priority": bad_priority,
-                "install_allowed": True,
-            }]
-        }))
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="Invalid priority|expected integer"):
-            catalog.get_active_catalogs()
-
-    def test_validate_url_http_rejected(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="HTTPS"):
-            catalog._validate_catalog_url("http://evil.com/step-catalog.json")
-
-    def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        # Should not raise
-        catalog._validate_catalog_url("http://localhost:8080/step-catalog.json")
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "https://[::1",              # unterminated IPv6 bracket
-            "https://[not-an-ip]/x",     # bracketed non-IP host
-            "https://example.com:notaport/steps.json",
-        ],
-    )
-    def test_validate_url_malformed_raises_validation_error(self, project_dir, url):
-        """A malformed authority must raise StepValidationError, not leak a raw
-        ValueError past the command handler (which only catches
-        StepValidationError). Mirrors specify_cli.catalogs (#3435).
-        """
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="malformed"):
-            catalog._validate_catalog_url(url)
-
-    def test_fetch_malformed_redirect_target_raises_catalog_error(
-        self, project_dir, monkeypatch
-    ):
-        """A malformed post-redirect URL must raise StepCatalogError, not a raw
-        ValueError.
-
-        The fetch path re-validates ``resp.geturl()`` after redirects, so a
-        broken redirect to a bracketed non-IP host (``https://[not-an-ip]/x``)
-        makes ``urlparse``/``.hostname`` raise ``ValueError``. Without the guard
-        that leaks out as ``... Invalid IPv6 URL`` re-wrapping; the guard turns
-        it into a clean ``... malformed URL ...`` refusal. The initial
-        ``entry.url`` is valid so validation only trips on the redirect target.
-        Mirrors specify_cli.catalogs (#3435).
-        """
-        from specify_cli.workflows.step.catalog import (
-            StepCatalog,
-            StepCatalogEntry,
-            StepCatalogError,
-        )
-        from specify_cli.authentication import http as auth_http
-
-        class _FakeResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self):
-                return b"{}"
-
-            def geturl(self):
-                # A redirect landing on a bracketed non-IP authority.
-                return "https://[not-an-ip]/x"
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
-        )
-
-        catalog = StepCatalog(project_dir)
-        entry = StepCatalogEntry(
-            url="https://example.com/steps.json",
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-        # A fresh project_dir has no cache to fall back to, so the error
-        # propagates instead of being masked by a stale-cache read.
-        with pytest.raises(StepCatalogError, match="malformed"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
-
-    def test_fetch_validates_every_redirect_hop(self, project_dir, monkeypatch):
-        """A redirect_validator is passed to open_url and rejects a non-HTTPS
-        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
-        terminal-URL-only check would miss. Mirrors presets/extensions
-        (#3523 / #3524)."""
-        from specify_cli.workflows.step.catalog import (
-            StepCatalog,
-            StepCatalogEntry,
-            StepCatalogError,
-        )
-        from specify_cli.authentication import http as auth_http
-
-        captured = {}
-
-        def fake_open(url, timeout=30, redirect_validator=None):
-            captured["rv"] = redirect_validator
-            # Simulate the hop urllib validates before following the redirect.
-            redirect_validator(
-                "https://good.example/steps.json", "http://evil.test/hop"
-            )
-            raise AssertionError("redirect_validator should have raised")
-
-        monkeypatch.setattr(auth_http, "open_url", fake_open)
-
-        catalog = StepCatalog(project_dir)
-        entry = StepCatalogEntry(
-            url="https://good.example/steps.json",
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-        with pytest.raises(StepCatalogError, match="HTTPS"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
-        assert captured["rv"] is not None
-
-    def test_fetch_rejects_oversized_catalog_response(
-        self, project_dir, monkeypatch
-    ):
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.step import catalog as catalog_module
-        from specify_cli.workflows.step.catalog import (
-            StepCatalog,
-            StepCatalogEntry,
-            StepCatalogError,
-        )
-
-        monkeypatch.setattr(catalog_module, "MAX_JSON_CATALOG_BYTES", 32)
-        requested_sizes: list[int] = []
-
-        class _FakeResponse:
-            def __init__(self):
-                self.body = b"x" * 64
-                self.offset = 0
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def geturl(self):
-                return "https://example.com/steps.json"
-
-            def read(self, size=-1):
-                requested_sizes.append(size)
-                assert size >= 0
-                chunk_size = min(size, 7)
-                chunk = self.body[self.offset : self.offset + chunk_size]
-                self.offset += len(chunk)
-                return chunk
-
-        monkeypatch.setattr(
-            auth_http,
-            "open_url",
-            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
-        )
-
-        catalog = StepCatalog(project_dir)
-        entry = StepCatalogEntry(
-            url="https://example.com/steps.json",
-            name="test",
-            priority=1,
-            install_allowed=True,
-        )
-
-        with pytest.raises(StepCatalogError, match="exceeds maximum size"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
-
-        assert requested_sizes
-        assert not catalog.cache_dir.exists()
-
-    def test_add_catalog(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        assert config_path.exists()
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-        assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
-
-    def test_add_catalog_with_existing_inf_priority(self, project_dir):
-        """Step-catalog add_catalog() must not crash when an existing entry has a
-        `priority: .inf` (int(float('inf')) is an OverflowError) — _coerce_priority
-        treats it as 0 and the add succeeds."""
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "existing",
-                "url": "https://a.example.com/s.json",
-                "priority": float("inf"),
-                "install_allowed": True,
-            }]
-        }))
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://b.example.com/s.json", "new")
-
-        data = yaml.safe_load(config_path.read_text())
-        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/s.json")
-        assert new["priority"] == 1  # max(inf coerced to 0) + 1
-
-    def test_add_catalog_empty_yaml_file(self, project_dir):
-        """An empty YAML config file should be treated as empty, not corrupted."""
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text("", encoding="utf-8")
-
-        catalog = StepCatalog(project_dir)
-        # Should not raise StepValidationError "corrupted"
-        catalog.add_catalog("https://example.com/steps.json", "my-steps")
-
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-        assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
-
-    @pytest.mark.parametrize("bad", [[], False, 0, ""])
-    def test_add_catalog_rejects_falsy_non_mapping_config(
-        self, project_dir, bad
-    ):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        original = yaml.safe_dump(bad)
-        config_path.write_text(original, encoding="utf-8")
-
-        with pytest.raises(StepValidationError, match="expected a mapping"):
-            StepCatalog(project_dir).add_catalog(
-                "https://example.com/steps.json", "my-steps"
-            )
-
-        assert config_path.read_text(encoding="utf-8") == original
-
-    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        assert (
-            catalog.add_catalog("https://example.com/steps.json", "mine")
-            == "added"
-        )
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        data["catalogs"][0]["url"] = "  https://example.com/steps.json  "
-        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
-        original = config_path.read_bytes()
-
-        assert (
-            catalog.add_catalog("https://example.com/steps.json", "mine")
-            == "unchanged"
-        )
-        assert config_path.read_bytes() == original
-
-        with pytest.raises(StepValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/steps.json", "different")
-
-    def test_remove_catalog(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/s1.json", "first")
-        catalog.add_catalog("https://example.com/s2.json", "second")
-
-        removed = catalog.remove_catalog(0)
-        assert removed == "first"
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-
-    def test_remove_catalog_invalid_index(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/s1.json")
-
-        with pytest.raises(StepValidationError, match="out of range"):
-            catalog.remove_catalog(5)
-
-    @pytest.mark.parametrize("bad", [[], False, 0, ""])
-    def test_remove_catalog_rejects_falsy_non_mapping_config(
-        self, project_dir, bad
-    ):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text(yaml.safe_dump(bad), encoding="utf-8")
-
-        with pytest.raises(StepValidationError, match="expected a mapping"):
-            StepCatalog(project_dir).remove_catalog(0)
-
-    def test_remove_catalog_no_config(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="No step catalog config file found"):
-            catalog.remove_catalog(0)
-
-    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-        import builtins
-
-        catalog = StepCatalog(project_dir)
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
-            catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
-
-    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
-        import builtins
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/s1.json", "first")
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
-            catalog.remove_catalog(0)
-
-    def test_get_catalog_configs(self, project_dir):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        configs = catalog.get_catalog_configs()
-        assert len(configs) == 2
-        assert configs[0]["name"] == "default"
-        assert isinstance(configs[0]["install_allowed"], bool)
-
-    def test_search_with_mock_catalog(self, project_dir, monkeypatch):
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        mock_data = {
-            "schema_version": "1.0",
-            "steps": {
-                "deploy": {
-                    "id": "deploy",
-                    "name": "Deploy Step",
-                    "description": "Deploy to production",
-                    "version": "1.0.0",
-                },
-                "notify": {
-                    "id": "notify",
-                    "name": "Notify Step",
-                    "description": "Send notifications",
-                    "version": "1.0.0",
-                },
-            },
-        }
-
-        catalog = StepCatalog(project_dir)
-        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
-            "deploy": dict(mock_data["steps"]["deploy"], _catalog_name="test", _install_allowed=True),
-            "notify": dict(mock_data["steps"]["notify"], _catalog_name="test", _install_allowed=True),
-        })
-
-        results = catalog.search()
-        assert len(results) == 2
-
-        results = catalog.search(query="deploy")
-        assert len(results) == 1
-        assert results[0]["id"] == "deploy"
-
-    def test_search_with_non_string_fields(self, project_dir, monkeypatch):
-        """Non-string catalog fields (e.g. integer id) must not raise TypeError."""
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
-            "42": {
-                "id": 42,
-                "name": None,
-                "description": 99,
-                "_catalog_name": "test",
-                "_install_allowed": True,
-            },
-        })
-
-        results = catalog.search()
-        assert len(results) == 1
-
-        results = catalog.search(query="42")
-        assert len(results) == 1
-
-        results = catalog.search(query="missing")
-        assert len(results) == 0
-
-    def test_get_merged_steps_normalizes_list_ids_to_strings(self, project_dir, monkeypatch):
-        """List-based catalog entries with non-string ids must be normalized."""
-        from specify_cli.workflows.step.catalog import StepCatalog, StepCatalogEntry
-
-        catalog = StepCatalog(project_dir)
-        entry = StepCatalogEntry(
-            name="test",
-            url="https://example.com/steps.json",
-            priority=1,
-            install_allowed=True,
-        )
-        monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [entry])
-        monkeypatch.setattr(
-            catalog,
-            "_fetch_single_catalog",
-            lambda _entry, _force_refresh=False: {
-                "steps": [{"id": 42, "name": "Integer ID"}]
-            },
-        )
-
-        merged = catalog._get_merged_steps()
-        assert "42" in merged
-        assert 42 not in merged
-        assert merged["42"]["id"] == "42"
-
-    def test_get_step_info_returns_entry_or_none(self, project_dir, monkeypatch):
-        """get_step_info returns matching entry or None for missing ids."""
-        from specify_cli.workflows.step.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
-            "deploy": {
-                "id": "deploy",
-                "name": "Deploy Step",
-                "version": "1.0.0",
-                "_catalog_name": "test",
-                "_install_allowed": True,
-            },
-        })
-
-        info = catalog.get_step_info("deploy")
-        assert info is not None
-        assert info["name"] == "Deploy Step"
-
-        missing = catalog.get_step_info("nonexistent")
-        assert missing is None
-
-    def test_oversized_step_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
-        """A healthy step catalog still works after an oversized one was rejected."""
-        from specify_cli.workflows.catalog import (
-            StepCatalog,
-            StepCatalogEntry,
-            StepCatalogError,
-        )
-        from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.step import catalog as step_catalog_module
-
-        monkeypatch.setattr(step_catalog_module, "MAX_JSON_CATALOG_BYTES", 512)
-
-        call_count = [0]
-
-        class _OversizedResponse:
-            def __init__(self):
-                self._data = b"x" * 1024
-                self._pos = 0
-
-            def read(self, n=-1):
-                if n < 0:
-                    chunk = self._data[self._pos:]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + n]
-                self._pos += len(chunk)
-                return chunk
-
-            def geturl(self):
-                return "https://bad.example.com/steps.json"
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                pass
-
-        class _HealthyResponse:
-            def __init__(self):
-                self._data = b'{"steps": {}}'
-                self._pos = 0
-
-            def read(self, n=-1):
-                if n < 0:
-                    chunk = self._data[self._pos:]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + n]
-                self._pos += len(chunk)
-                return chunk
-
-            def geturl(self):
-                return "https://good.example.com/steps.json"
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                pass
-
-        def fake_open(url, timeout=30, redirect_validator=None):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _OversizedResponse()
-            return _HealthyResponse()
-
-        monkeypatch.setattr(auth_http, "open_url", fake_open)
-
-        catalog = StepCatalog(project_dir)
-
-        bad_entry = StepCatalogEntry(
-            url="https://bad.example.com/steps.json",
-            name="bad",
-            priority=1,
-            install_allowed=True,
-        )
-        with pytest.raises(StepCatalogError, match="exceeds maximum size"):
-            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
-
-        good_entry = StepCatalogEntry(
-            url="https://good.example.com/steps.json",
-            name="good",
-            priority=1,
-            install_allowed=True,
-        )
-        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
-        assert isinstance(result, dict)
 
 
 # ===== Load Custom Steps Tests =====
@@ -11410,101 +9336,7 @@ steps:
         assert resumed.status == RunStatus.FAILED  # still "exit 1"
         assert resumed.inputs["cmd"] == "exit 1"
 
-    def test_resume_re_resolves_complete_integration_config(
-        self, project_dir, monkeypatch
-    ):
-        from specify_cli.workflows.base import RunStatus
-        from specify_cli.workflows.engine import WorkflowDefinition
 
-        calls = []
-        return_codes = iter((1, 0))
-
-        def fake_run(args, **kwargs):
-            calls.append(args)
-            return type("Result", (), {"returncode": next(return_codes)})()
-
-        monkeypatch.delenv(
-            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
-        )
-        monkeypatch.setattr(
-            "shutil.which",
-            lambda name: (
-                "/usr/bin/docker-agent"
-                if name in {"docker-agent", "/usr/bin/docker-agent"}
-                else None
-            ),
-        )
-        monkeypatch.setattr("subprocess.run", fake_run)
-
-        definition = WorkflowDefinition.from_string(self._WF_RUNTIME_CONFIG)
-        engine = self._engine(project_dir)
-        state = engine.execute(definition)
-
-        assert state.status is RunStatus.FAILED
-        assert state.step_results["implement"]["integration_args"] == [
-            "./initial-agent.yaml"
-        ]
-        assert state.step_results["implement"]["integration_options"] == {
-            "agent": "initial-root",
-            "safety": "balanced",
-        }
-
-        resumed = engine.resume(
-            state.run_id,
-            {
-                "config": "./changed-on-resume.yaml",
-                "agent_name": "changed-root",
-                "model_name": "changed/model",
-            },
-        )
-
-        assert resumed.status is RunStatus.COMPLETED
-        assert resumed.inputs["config"] == "./changed-on-resume.yaml"
-        assert len(calls) == 2
-        assert "./initial-agent.yaml" in calls[0]
-        assert "./changed-on-resume.yaml" in calls[1]
-        assert "./initial-agent.yaml" not in calls[1]
-        assert calls[1][calls[1].index("--agent") + 1] == "changed-root"
-        assert calls[1][calls[1].index("--model") + 1] == "changed/model"
-
-    def test_resume_does_not_mix_new_integration_with_old_runtime_config(
-        self, project_dir, monkeypatch
-    ):
-        from specify_cli.workflows.base import RunStatus
-        from specify_cli.workflows.engine import WorkflowDefinition
-
-        monkeypatch.delenv(
-            "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
-        )
-        monkeypatch.setattr(
-            "shutil.which",
-            lambda name: (
-                "/usr/bin/docker-agent"
-                if name in {"docker-agent", "/usr/bin/docker-agent"}
-                else None
-            ),
-        )
-        monkeypatch.setattr(
-            "subprocess.run",
-            lambda *args, **kwargs: type("Result", (), {"returncode": 1})(),
-        )
-
-        definition = WorkflowDefinition.from_string(self._WF_DYNAMIC_INTEGRATION)
-        engine = self._engine(project_dir)
-        state = engine.execute(definition)
-        assert state.status is RunStatus.FAILED
-
-        resumed = engine.resume(
-            state.run_id,
-            {"integration": "claude", "config": "./changed-on-resume.yaml"},
-        )
-
-        assert resumed.status is RunStatus.FAILED
-        step_result = resumed.step_results["implement"]
-        assert step_result["integration"] == "claude"
-        assert step_result["integration_args"] == ["./changed-on-resume.yaml"]
-        assert "Integration 'claude'" in (step_result["error"] or "")
-        assert "./initial-agent.yaml" not in str(step_result)
 
     def test_resume_merges_and_coerces_typed_input(self, project_dir):
         import json as _json
@@ -11598,240 +9430,3 @@ steps:
         completed = engine.resume(state.run_id, {"spec_verdict": "approve"})
         assert completed.status == RunStatus.COMPLETED
         assert completed.step_results["gate"]["output"]["choice"] == "approve"
-
-
-
-
-
-
-
-
-
-
-
-
-
-class TestWorkflowCliAlignment:
-    """CLI alignment with extension/preset commands (#2342)."""
-
-    def test_registry_add_rolls_back_memory_on_save_failure(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
-
-        def boom():
-            raise OSError("disk full")
-
-        monkeypatch.setattr(registry, "save", boom)
-        with pytest.raises(OSError):
-            registry.add("align-wf", {"version": "2.0.0", "source": "catalog"})
-        assert registry.get("align-wf")["version"] == "1.0.0"
-
-        with pytest.raises(OSError):
-            registry.add("other-wf", {"version": "1.0.0", "source": "catalog"})
-        assert registry.get("other-wf") is None
-
-    @pytest.mark.parametrize("error_type", [TypeError, ValueError])
-    def test_registry_add_rolls_back_memory_on_serialization_failure(
-        self, project_dir, monkeypatch, error_type
-    ):
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
-
-        def boom():
-            raise error_type("not JSON serializable")
-
-        monkeypatch.setattr(registry, "save", boom)
-        with pytest.raises(error_type):
-            registry.add("align-wf", {"version": "2.0.0", "source": "catalog"})
-        assert registry.get("align-wf")["version"] == "1.0.0"
-
-        with pytest.raises(error_type):
-            registry.add("other-wf", {"version": "1.0.0", "source": "catalog"})
-        assert registry.get("other-wf") is None
-
-    def test_registry_add_survives_non_dict_existing_entry(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.data["workflows"]["align-wf"] = "corrupted"
-        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
-        assert registry.get("align-wf")["version"] == "1.0.0"
-
-    def test_step_registry_add_survives_non_dict_existing_entry(self, project_dir):
-        """StepRegistry.add must treat a corrupted non-dict existing entry as
-        absent rather than crash on existing.get() (parity with
-        WorkflowRegistry.add)."""
-        from specify_cli.workflows.step.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        registry.data["steps"]["my-step"] = "corrupted"
-        registry.add("my-step", {"version": "1.0.0"})
-        assert registry.get("my-step")["version"] == "1.0.0"
-
-    @pytest.mark.parametrize(
-        "contents",
-        [
-            "not json",
-            "[]",
-            '{"schema_version": "1.0"}',
-            '{"schema_version": "1.0", "workflows": "broken"}',
-        ],
-    )
-    def test_registry_load_rejects_corrupt_contents(
-        self, project_dir, contents
-    ):
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.workflows_dir.mkdir(parents=True, exist_ok=True)
-        registry.registry_path.write_text(contents, encoding="utf-8")
-
-        with pytest.raises(OSError, match="corrupt"):
-            WorkflowRegistry(project_dir)
-
-        assert registry.registry_path.read_text(encoding="utf-8") == contents
-
-    def test_registry_save_refuses_symlinked_parent(self, project_dir, tmp_path):
-        """Construction now fails closed on a symlinked .specify just like
-        an unreadable registry file: a symlinked parent must never be
-        silently tolerated up to save() -- it must raise immediately."""
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        outside = tmp_path / "outside-specify"
-        outside.mkdir()
-        specify_dir = project_dir / ".specify"
-        if specify_dir.exists():
-            shutil.rmtree(specify_dir)
-        specify_dir.symlink_to(outside)
-        with pytest.raises(OSError, match="symlink"):
-            WorkflowRegistry(project_dir)
-        assert not (outside / "workflows").exists()
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
-    def test_registry_save_preserves_existing_file_mode(self, project_dir):
-        """A registry shared as 0640/0644 must keep that mode after a save,
-        not be silently replaced by mkstemp's 0600 default -- otherwise
-        every add/remove locks other project users out of a previously
-        shared registry file."""
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("first-wf", {"name": "First"})
-        registry.registry_path.chmod(0o644)
-
-        registry.add("second-wf", {"name": "Second"})
-
-        mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
-        assert mode == 0o644, f"expected 0644, got {oct(mode)}"
-
-    @pytest.mark.skipif(not hasattr(os, "fchown"), reason="os.fchown is unavailable")
-    def test_registry_save_preserves_existing_owner_group(
-        self, project_dir, monkeypatch
-    ):
-        from specify_cli.workflows.catalog import WorkflowRegistry
-        import specify_cli.workflows.catalog as catalog_mod
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("first-wf", {"name": "First"})
-        existing = registry.registry_path.stat()
-        calls: list[tuple[os.stat_result, int, int]] = []
-
-        monkeypatch.setattr(
-            catalog_mod.os,
-            "fchown",
-            lambda fd, uid, gid: calls.append((os.fstat(fd), uid, gid)),
-        )
-        registry.add("second-wf", {"name": "Second"})
-
-        assert len(calls) == 1
-        temp_stat, uid, gid = calls[0]
-        assert stat.S_ISREG(temp_stat.st_mode)
-        assert uid == existing.st_uid
-        assert gid == existing.st_gid
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
-    def test_registry_save_on_new_registry_uses_secure_default_mode(self, project_dir):
-        """A brand-new registry file (no prior mode to preserve) should keep
-        mkstemp's secure 0600 default rather than something more permissive."""
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("first-wf", {"name": "First"})
-
-        mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
-        assert mode == 0o600, f"expected 0600, got {oct(mode)}"
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_registry_save_rejects_swapped_temp_without_touching_target(
-        self, project_dir, monkeypatch
-    ):
-        from specify_cli.workflows.catalog import WorkflowRegistry
-        import specify_cli.workflows.catalog as catalog_mod
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("first-wf", {"name": "First"})
-        registry.registry_path.chmod(0o640)
-
-        victim = project_dir / "victim.txt"
-        victim.write_text("untouched", encoding="utf-8")
-        victim.chmod(0o600)
-
-        tmp_path = None
-        real_mkstemp = catalog_mod.tempfile.mkstemp
-        real_dump = catalog_mod.json.dump
-
-        def tracking_mkstemp(*args, **kwargs):
-            nonlocal tmp_path
-            fd, name = real_mkstemp(*args, **kwargs)
-            tmp_path = Path(name)
-            return fd, name
-
-        def swap_after_dump(*args, **kwargs):
-            result = real_dump(*args, **kwargs)
-            assert tmp_path is not None
-            tmp_path.unlink()
-            tmp_path.symlink_to(victim)
-            return result
-
-        monkeypatch.setattr(catalog_mod.tempfile, "mkstemp", tracking_mkstemp)
-        monkeypatch.setattr(catalog_mod.json, "dump", swap_after_dump)
-
-        with pytest.raises(OSError):
-            registry.add("second-wf", {"name": "Second"})
-
-        assert victim.read_text(encoding="utf-8") == "untouched"
-        if sys.platform != "win32":
-            assert stat.S_IMODE(victim.stat().st_mode) == 0o600
-        assert not registry.registry_path.is_symlink()
-        assert WorkflowRegistry(project_dir).is_installed("first-wf")
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
-    def test_registry_save_failure_preserves_file_on_disk(self, project_dir, monkeypatch):
-        """A failed dump must not truncate the persisted registry, and must
-        not alter its on-disk mode either -- the chmod-to-match-existing-mode
-        step operates on the temp file, never the target, so a failed save
-        (which never reaches os.replace) cannot touch the original's mode."""
-        from specify_cli.workflows.catalog import WorkflowRegistry
-
-        registry = WorkflowRegistry(project_dir)
-        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
-        registry.registry_path.chmod(0o644)
-
-        import specify_cli.workflows.catalog as catalog_mod
-
-        def boom(*args, **kwargs):
-            raise OSError("disk full")
-
-        monkeypatch.setattr(catalog_mod.json, "dump", boom)
-        with pytest.raises(OSError):
-            registry.add("align-wf", {"version": "2.0.0", "source": "catalog"})
-        monkeypatch.undo()
-
-        fresh = WorkflowRegistry(project_dir)
-        assert fresh.get("align-wf")["version"] == "1.0.0"
-        assert stat.S_IMODE(registry.registry_path.stat().st_mode) == 0o644
-        assert not list(registry.workflows_dir.glob("*.tmp"))

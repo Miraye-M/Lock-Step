@@ -1,17 +1,16 @@
-"""CLI adapter for the experimental ``specify mcp`` stdio server."""
+"""Local stdio MCP hosting command."""
 
 from __future__ import annotations
-
+from pathlib import Path
 import typer
 
 
-def mcp() -> None:
-    """Run the experimental version-only MCP server over stdio."""
-    from .mcp_server import run_stdio_server
+def mcp(project_dir: str = typer.Option(".")) -> None:
+    """Serve the local remediation MCP interface over stdio."""
+    from .mcp_server.server import create_server
 
-    run_stdio_server()
+    create_server(launch_directory=Path(project_dir).resolve()).run(transport="stdio")
 
 
 def register(app: typer.Typer) -> None:
-    """Register ``specify mcp`` on the root application."""
-    app.command()(mcp)
+    app.command("mcp")(mcp)

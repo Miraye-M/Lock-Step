@@ -1,23 +1,12 @@
-## Description
+## Change
 
-<!-- What does this PR do? Why is it needed? -->
+Describe the remediation behavior or defect and resulting behavior.
 
-## Testing
+## Validation
 
-<!-- How did you test your changes? -->
+Report focused tests, the virtualenv test suite and any live integration limits.
+Include approval, failed-verification and recovery evidence when those paths change.
 
-- [ ] Tested locally with `uv run specify --help`
-- [ ] Ran existing tests with `uv sync && uv run pytest`
-- [ ] Tested with a sample project (if applicable)
+## AI disclosure
 
-## AI Disclosure
-
-<!-- Per our Contributing guidelines, AI assistance must be disclosed. -->
-<!-- See: https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#ai-contributions-in-spec-kit -->
-
-- [ ] I **did not** use AI assistance for this contribution
-- [ ] I **did** use AI assistance (fill in the disclosure below)
-
-<!-- If you used AI assistance, replace "N/A" below with a free-form disclosure that names the agent/tool, model(s), settings/mode (reasoning effort; autonomous vs. human-supervised), and extent (docs vs. code generation). This does not change how much scrutiny your PR receives — the same evidence bar applies to everyone. It just gives maintainers visibility into model/agent usage. -->
-
-**AI disclosure:** N/A
+Name the agent, model (or unknown), mode and extent of AI assistance.

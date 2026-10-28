@@ -1,98 +1,49 @@
-"""MCP tool registration and stdio server lifecycle."""
+"""Local stdio hosting; domain behavior belongs in shared remediation operations."""
 
 from __future__ import annotations
-
-from collections.abc import Callable
 from pathlib import Path
-
 from mcp.server import MCPServer
-from mcp.types import CallToolResult, TextContent
-
-from ..artifacts._mcp import register as register_artifacts
 from ..mcp_version import register as register_version
-from .catalog import (
-    CommandAdapterError,
-    CommandDescription,
-    CommandList,
-    VersionResult,
-    describe_command,
-    list_commands,
-)
-from .executor import run_command
+from ..remediation._mcp import register as register_remediation
+from ..remediation._mcp import guarded
+from ..remediation.mcp_init import tool as initialize
+from mcp.types import ToolAnnotations
 
-CommandRunner = Callable[[str], VersionResult]
-
-
-def _tool_error(exc: CommandAdapterError) -> CallToolResult:
-    return CallToolResult(
-        content=[
-            TextContent(
-                type="text",
-                text=f"{exc.code}: {exc.message}",
-            )
-        ],
-        structuredContent=exc.payload(),
-        isError=True,
-    )
+ROOT_INVENTORY = {
+    "init": {"disposition": "available", "tool": "specify_init"},
+    "version": {"disposition": "available", "tool": "specify_version"},
+    "mcp": {
+        "disposition": "excluded",
+        "reason": "Stdio server hosting is process infrastructure.",
+    },
+}
 
 
-def create_server(
-    *,
-    command_runner: CommandRunner = run_command,
-    launch_directory: Path | None = None,
-) -> MCPServer:
-    """Create the experimental local stdio MCP server."""
-    server_launch_directory = (
-        Path.cwd() if launch_directory is None else Path(launch_directory)
-    )
-    if not server_launch_directory.is_absolute():
-        raise ValueError("MCP server launch directory must be absolute")
-
+def create_server(*, launch_directory: Path | None = None) -> MCPServer:
+    root = Path.cwd() if launch_directory is None else launch_directory
+    if not root.is_absolute():
+        raise ValueError("MCP launch directory must be absolute")
     server = MCPServer(
-        name="specify",
-        title="Spec Kit CLI",
-        description=(
-            "Experimental stdio-only MCP adapter for stable Specify CLI JSON commands."
-        ),
-        version="experimental",
+        name="remediation",
+        title="Lockstep Remediation",
         log_level="ERROR",
+        instructions=f"Project directory: {root}. Pass this explicit project_dir in operation requests. Human plan approval is required.",
     )
-
-    @server.tool(
-        name="specify_list_commands",
-        description="List CLI commands supported by the Spec Kit MCP server.",
-    )
-    def specify_list_commands() -> CommandList:
-        return list_commands()
-
-    @server.tool(
-        name="specify_describe_command",
-        description="Describe one CLI command supported by the Spec Kit MCP server.",
-    )
-    def specify_describe_command(command: str) -> CommandDescription:
-        try:
-            return describe_command(command)
-        except CommandAdapterError as exc:
-            return _tool_error(exc)
-
-    @server.tool(
-        name="specify_run_command",
-        description=(
-            "Run one supported CLI command and return its direct stable JSON payload."
+    register_version(server)
+    register_remediation(server)
+    server.add_tool(
+        guarded(initialize),
+        name="specify_init",
+        structured_output=True,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
         ),
     )
-    def specify_run_command(command: str) -> VersionResult:
-        try:
-            return command_runner(command)
-        except CommandAdapterError as exc:
-            return _tool_error(exc)
-
-    register_version(server)
-    register_artifacts(server, launch_directory=server_launch_directory)
-
     return server
 
 
 def run_stdio_server() -> None:
-    """Run the MCP server using stdio and no alternate transport."""
     create_server().run(transport="stdio")

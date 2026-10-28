@@ -7,8 +7,9 @@ import stat
 from pathlib import Path
 from typing import Any, NoReturn
 
-from ._init_options import INIT_OPTIONS_FILE
 from .file_helper import FileHelper, FileHelperError
+
+INIT_OPTIONS_FILE = ".specify/init-options.json"
 
 
 class ProjectPolicyError(ValueError):
