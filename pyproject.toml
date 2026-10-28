@@ -8,7 +8,7 @@ dependencies = [
     "typer>=0.24.0",
     "click>=8.2.1",
     "rich",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
     "packaging>=23.0",
     "json5>=0.13.0",
     "mcp>=2.2.0,<3.0.0",
