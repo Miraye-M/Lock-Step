@@ -34,3 +34,6 @@ task identity, payload and isolated execution declaration. File parsing belongs 
 the CLI adapter; semantic validation and receipt persistence remain shared.
 next-task defaults to the same compact prompt/schema file reference as MCP;
 --include-payload explicitly requests the full inline task for programmatic use.
+status --summary maps to `StatusRequest(summary=True)`: full run bodies are
+replaced by typed rows in `details.summary` and a text table in `message`. The
+rows are computed by the shared operation, never by the adapter.

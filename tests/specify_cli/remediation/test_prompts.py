@@ -57,8 +57,13 @@ def test_dispatch_includes_canonical_profile_context_schema_and_evidence(
     expected = build_prompt(run, "acc-investigator", EvidenceNote, evidence)
     captured = []
 
-    def execute(argv, cwd, timeout):
+    def execute(argv, cwd, timeout, *, env_names):
         captured.append((argv, cwd, timeout))
+        # The Copilot CLI sees the command allowlist plus agent names only.
+        assert "PATH" in env_names and "GH_TOKEN" in env_names
+        assert set(env_names) == set(
+            run.config.command_env_names + run.config.agent_env_names
+        )
         return {
             "exit_code": 0,
             "truncated": False,

@@ -62,8 +62,11 @@ that the named secret variables are present, without contacting the service.
 
 Secrets come from named environment variables, never checked-in configuration or
 agent prompts. The service process inherits only the MCP SDK's base environment
-plus those selected names. MCP calls have a 60-second deadline and results are
-limited to 256 KB after decoding. The stdio provider must also bound its output.
+plus those selected names. The same names are withheld from configured tests,
+local checks and the Copilot CLI, which see only `command_env_names` (plus
+`agent_env_names` for the CLI); a configuration that lists a secret under either
+is rejected. MCP calls have a 60-second deadline and results are limited to
+256 KB after decoding. The stdio provider must also bound its output.
 
 ## Operations
 

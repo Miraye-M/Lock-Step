@@ -100,10 +100,18 @@ flowchart LR
   stage against the same evidence. It cannot approve a plan, reset the repair
   budget or erase a job ID. Code and security review rejections return to repair
   automatically within the two-attempt budget.
-- **Waiting** runs poll one Jenkins or AFT job with short calls. A cancelled run
-  keeps occupying the build slot until the job terminates remotely.
+- **Waiting** runs poll one Jenkins or AFT job with short calls. There is one
+  build slot: a run that reaches `build` while another run's job is queued or
+  running is held there, without a pause, until that job terminates. Every other
+  run keeps advancing through its local stages. A cancelled run keeps occupying
+  the slot until its job terminates remotely. `status --summary` shows which run
+  holds the slot a held run is waiting for.
 - **Awaiting agent** runs hold an atomic task record. Only an accepted receipt
-  requeues them; only the worker consumes the answer.
+  requeues them; only the worker consumes the answer. Other runs are not blocked
+  behind them.
+- **Scheduling** is least-recently-touched first among eligible runs, so a run
+  polling a long job and a run doing local work alternate instead of one
+  starving the other.
 - **Cancelled** runs stop local progress, keep the worktree and remote jobs for
   inspection, and refuse new submissions.
 - **Changed trees** after approval or verification revoke approval, reviews, QA
@@ -119,13 +127,21 @@ death releases them. Intent is recorded before each external effect so a crash
 between the remote call and the local checkpoint is reconciled by key, never
 replayed blindly.
 
+The event log inside `state.json` folds a repeat of the previous event into a
+`count` and `last` timestamp instead of appending it, so a run that polls a
+two-hour job does not grow by one row per poll. The report is re-rendered only
+when something a reader can see has changed: stage, status, required action or a
+job status. Polling an unchanged job rewrites nothing.
+
 ## Observability
 
 | Signal | Where | What it tells you |
 | --- | --- | --- |
 | `specify remediation doctor` | CLI, MCP `specify_remediation_doctor` | Read-only preflight: configuration, agent mode, repositories and target branch, regex and command resolution, connector bindings and secrets, agent pack integrity, worker liveness, runs needing attention. Errors would block a live run; warnings need review |
 | `specify remediation status` | CLI, MCP | Every run's stage, status, `required_action`, evidence and external identities |
-| Worker heartbeat | `worker status` → `details.heartbeat`; file `.specify/remediation/worker.heartbeat.json` | PID, start time, tick count, whether the last tick advanced a run, age in seconds. The kernel lock proves a process exists; the heartbeat shows it is still ticking |
+| `specify remediation status --summary` | CLI; MCP `{"summary": true}` | One row per run (run, ticket, stage, status, age since last change, required action or the run holding the build slot) as a text table in `message` and typed rows in `details.summary` |
+| Worker heartbeat | `worker status` → `details.heartbeat`; file `.specify/remediation/worker.heartbeat.json` | PID, start time, tick count, whether the last tick advanced a run, the run, stage and status most recently advanced (`last_advanced`, kept through idle polls), age in seconds. The kernel lock proves a process exists; the heartbeat shows it is still ticking |
+| Structured worker log | `.specify/remediation/worker.events.jsonl` | One JSON object per line: `worker_started`, a `tick` per advanced run with run, stage, status and elapsed seconds, `idle` at the start of each idle streak, `worker_stopped`. Rotated once to `.jsonl.1` past 5 MB |
 | Report timeline | `report.md` → "Timeline" | Ordered worker events with details; repeated identical checkpoints while waiting are collapsed with a repeat count |
 | Agent activity | `report.md` → "Orchestrator agent activity" | Each specialist invocation with stage, status, profile digest and, for native tasks, host-declared execution provenance |
 | Structured findings | `report.md`, `state.json` | Reviewer findings with severity, location, evidence, correction and blocking flag, including historical attempts |
@@ -168,6 +184,12 @@ flowchart LR
   gates that do not depend on that claim and refuses reused context identifiers.
 - Secrets reach connectors only through named environment variables. They never
   enter configuration, prompts, reports or results.
+- Configured tests, regression and local checks run with an allowlisted
+  environment (`command_env_names`, defaulting to interpreter, locale, path and
+  proxy variables). The Copilot CLI additionally receives `agent_env_names`. Any
+  variable a connector names as a secret is removed from both sets at use, and
+  configuration that lists one is rejected. Code an agent proposed therefore
+  cannot read connector credentials from the worker's environment.
 - MCP tool annotations describe side effects conservatively so hosts can ask for
   confirmation, but hosts do not grant human approval. Approval is a recorded
   decision on a specific digest.

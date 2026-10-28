@@ -13,6 +13,7 @@ Always pass `--project-dir` when the terminal is outside the initialized project
 | `specify remediation next-task --run-id ID` | Retrieve a pending native task without advancing the run |
 | `specify remediation submit-agent-output REQUEST.json` | Validate and queue a typed native response |
 | `specify remediation status` | Read current stages, actions and evidence |
+| `specify remediation status --summary` | One row per run: stage, status, age, required action or build-slot holder |
 | `specify remediation approve ID --plan-digest HASH --reviewer NAME` | Record approval of the reviewed plan |
 | `specify remediation approve ID --plan-digest HASH --reviewer NAME --reject` | Reject and cancel a proposed plan |
 | `specify remediation resume ID` | Continue a paused run after addressing its diagnostic |
@@ -80,17 +81,40 @@ Two failed repairs exhaust the automatic repair budget; inspect the worktree and
 logs instead of repeatedly prompting the agent. The initial release does not
 reset exhausted attempts or create a second run for the same ticket/target.
 
-The worker log is `.specify/remediation/worker.log`. A stale PID file does not
-prove that the worker is running; `worker status` checks the kernel lock and
-returns the last heartbeat (`details.heartbeat`: PID, start time, tick count,
-whether the last tick advanced a run, age in seconds). A held lock with an old
-heartbeat indicates a hung worker. Restart with `worker start`. If a mutation
-reports that state is busy, retry after the bounded stage finishes. Status reads
-remain available during execution.
+The worker writes two logs. `.specify/remediation/worker.log` is raw process
+output of the detached worker. `.specify/remediation/worker.events.jsonl` has one
+JSON object per line: `worker_started`, one `tick` per advanced run with its run
+ID, stage, status and elapsed seconds, `idle` when an idle streak begins, and
+`worker_stopped`. Tail or filter it with ordinary tools; it rotates once to
+`worker.events.jsonl.1` past 5 MB. A stale PID file does not prove that the
+worker is running; `worker status` checks the kernel lock and returns the last
+heartbeat (`details.heartbeat`: PID, start time, tick count, whether the last
+tick advanced a run, the run and stage most recently advanced under
+`last_advanced`, age in seconds). A held lock with an old heartbeat indicates a hung worker. Restart with
+`worker start`. If a mutation reports that state is busy, retry after the bounded
+stage finishes. Status reads remain available during execution.
+
+With many runs, `status --summary` prints one row per run (run, ticket, stage,
+status, age since the last change, required action) and returns the same rows
+typed under `details.summary`. A run that has reached `build` while another
+run's Jenkins job is still queued or running shows which run holds the build
+slot; it continues on its own once that job terminates. Other runs keep moving
+through intake, analysis, planning, repair and verification meanwhile.
 
 The report's Timeline section lists worker events in order with their details.
-Identical consecutive checkpoints recorded while waiting on a job or a human are
-collapsed into one row with a repeat count, so the trail shows transitions.
+A repeat of the previous event, such as the checkpoint recorded on every poll of
+a running job, is folded into that event's repeat count when it is written, so
+both `state.json` and the trail show transitions rather than polling. The report
+itself is rewritten only when stage, status, required action or a job status
+changes.
+
+Configured tests, the regression command and local checks run with an
+allowlisted environment. `command_env_names` defaults to interpreter, locale,
+temporary-directory, path and proxy variables; add the names your test runner
+needs. `agent_env_names` (defaults: `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST` and the
+XDG directories) is added for the Copilot CLI only. Variables named under
+`servers[].env_names` are connector secrets: configuration that forwards one is
+rejected, and the worker strips them regardless.
 
 Resume does not approve a plan, reset timeout history, or erase build IDs. Fix
 missing permissions/service availability before resuming. To retry a failed

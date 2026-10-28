@@ -215,10 +215,15 @@ and MCP bindings, then run `doctor` until it reports no errors.
   `status`, `doctor` and the report timeline.
 - **Observable by default.** Reports include agent activity with profile digests,
   the QA matrix, structured findings, a collapsed event timeline and an unchecked
-  human acceptance checklist. The worker publishes a heartbeat beside its lock.
+  human acceptance checklist. The worker publishes a heartbeat naming its current
+  run beside its lock and a JSON-lines event log.
+- **Least privilege for proposed code.** Configured tests and checks run with an
+  allowlisted environment; connector secrets never reach them or the Copilot CLI.
 
 The full gate catalog, failure handling and trust boundaries are in the
-[harness guide](docs/harness.md).
+[harness guide](docs/harness.md). For an animated, step-by-step view of the
+architecture, pipeline, run lifecycle, native handoff and evidence chain, open
+[docs/walkthrough.html](docs/walkthrough.html) in a browser.
 
 ## Commands
 
@@ -227,7 +232,7 @@ The full gate catalog, failure handling and trust boundaries are in the
 | `specify init` / `specify remediation init [--no-demo] [--agent vscode]` | Create or check a control project and install the agent pack |
 | `specify remediation doctor` | Read-only preflight: configuration, repositories, commands, connectors, agent pack, worker, runs |
 | `specify remediation run ACC-101 [ACC-102 ...]` | Queue one durable run per ticket and start the worker |
-| `specify remediation status` | Stages, required actions and evidence for every run |
+| `specify remediation status [--summary]` | Stages, required actions and evidence for every run, or one compact row per run |
 | `specify remediation approve RUN --plan-digest D --reviewer NAME [--reject]` | Record the human decision on the current plan |
 | `specify remediation resume RUN` / `cancel RUN` | Continue a paused run after fixing its cause, or stop it while preserving evidence |
 | `specify remediation report RUN` | Write and return the Markdown evidence report |

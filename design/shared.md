@@ -8,8 +8,10 @@ side effects belong below both adapters.
 
 - `remediation/contracts.py`: Pydantic requests, results and domain records;
   unknown fields are rejected. `RemediationError` represents expected failures.
-- `remediation/operations.py`: initialize, start, status, approve, resume, cancel,
-  report. `worker/operations.py`: worker lifecycle, heartbeat and durable ticks.
+- `remediation/operations.py`: initialize, start, status (full or summary rows),
+  approve, resume, cancel, report. `worker/operations.py`: worker lifecycle,
+  heartbeat with run context, JSON-lines event log, build-slot scheduling and
+  durable ticks.
   `doctor.py`: read-only preflight diagnostics returning `DoctorResult`.
 - `runtime.py`, `quality.py`, `fix_evidence.py`, `connectors.py`, `storage.py`:
   focused behavior and invariants. No Typer/MCP formatting in these modules.

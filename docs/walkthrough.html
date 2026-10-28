@@ -1,0 +1,831 @@
+<title>Lockstep Walkthrough</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (max 1080px) with a sticky section rail. Every diagram is an inline SVG on a dotted "control room" grid; one shared scene engine moves packets along SVG routes and lights nodes, so motion means the same thing everywhere. */
+:root {
+  --bg: #f4f6f3;
+  --fg: #141d18;
+  --muted: #5a665f;
+  --line: #d3d9d4;
+  --grid: #e3e8e3;
+  --card: #ffffff;
+  --card-2: #eaeeea;
+  --human: #b86a00;
+  --human-soft: #fff1dd;
+  --agent: #3453c4;
+  --agent-soft: #e7ecff;
+  --harness: #1f8a3c;
+  --harness-soft: #e1f4e6;
+  --ext: #66707a;
+  --ext-soft: #eceff1;
+  --danger: #b42318;
+  --danger-soft: #fde8e6;
+  --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1311; --fg: #e5eae6; --muted: #98a49d; --line: #273029; --grid: #1a221d; --card: #151c18; --card-2: #1b241f;
+    --human: #f2a93f; --human-soft: #2c2112; --agent: #91a6ff; --agent-soft: #19213a; --harness: #5fcb7f; --harness-soft: #12281a;
+    --ext: #a6afb6; --ext-soft: #1f2528; --danger: #ff7f70; --danger-soft: #3a1714; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1311; --fg: #e5eae6; --muted: #98a49d; --line: #273029; --grid: #1a221d; --card: #151c18; --card-2: #1b241f;
+  --human: #f2a93f; --human-soft: #2c2112; --agent: #91a6ff; --agent-soft: #19213a; --harness: #5fcb7f; --harness-soft: #12281a;
+  --ext: #a6afb6; --ext-soft: #1f2528; --danger: #ff7f70; --danger-soft: #3a1714; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.55; margin: 0; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 64px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 600; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); font-weight: 600; letter-spacing: -0.01em; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 70ch; }
+a { color: var(--agent); }
+.eyebrow { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+.muted { color: var(--muted); }
+
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+nav.rail { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+nav.rail .wrap { display: flex; gap: 4px 18px; flex-wrap: wrap; align-items: center; padding-block: 10px; }
+nav.rail a { color: var(--muted); text-decoration: none; font-family: var(--mono); font-size: 0.78rem; padding: 4px 0; }
+nav.rail a:hover, nav.rail a:focus-visible { color: var(--fg); }
+nav.rail .brand { color: var(--fg); font-family: var(--sans); font-weight: 600; font-size: 0.95rem; margin-right: auto; }
+
+header.hero { padding-block: 56px 36px; display: grid; gap: 20px; }
+.hero .lede { font-size: 1.15rem; max-width: 64ch; }
+.facts { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 6px; }
+.fact { display: grid; gap: 2px; }
+.fact b { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fact span { color: var(--muted); font-size: 0.9rem; }
+
+section { padding-block: 44px; border-top: 1px solid var(--line); display: grid; gap: 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px 32px; }
+.two > * { min-width: 0; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; min-width: 0; }
+.panel.soft { background: var(--card-2); border-color: transparent; }
+ul.clean { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.sw-human { background: var(--human); } .sw-agent { background: var(--agent); } .sw-harness { background: var(--harness); } .sw-ext { background: var(--ext); }
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+button.btn { font: inherit; font-size: 0.9rem; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; transition: border-color 0.2s, transform 0.1s; }
+button.btn:hover { border-color: var(--muted); }
+button.btn:active { transform: translateY(1px); }
+button.btn.primary { background: var(--harness); border-color: var(--harness); color: #fff; }
+button.btn.human { background: var(--human); border-color: var(--human); color: #fff; }
+button.btn.pulse { animation: pulse 1.2s ease-in-out infinite; }
+button.btn:focus-visible { outline: 2px solid var(--agent); outline-offset: 2px; }
+button.btn[disabled] { opacity: 0.5; cursor: default; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--human-soft); } 50% { box-shadow: 0 0 0 8px var(--human-soft); } }
+.pill { font-family: var(--mono); font-size: 0.78rem; padding: 3px 9px; border-radius: 6px; background: var(--card-2); }
+.pill.waiting { color: var(--ext); } .pill.paused { color: var(--human); } .pill.running { color: var(--harness); } .pill.awaiting_agent { color: var(--agent); }
+
+/* Diagram stage */
+.stage { border: 1px solid var(--line); border-radius: 12px; background-color: var(--card); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 18px 18px; overflow-x: auto; }
+svg.d { width: 100%; height: auto; display: block; font-family: var(--sans); }
+svg.d text { fill: var(--fg); font-size: 13px; pointer-events: none; }
+svg.d .small { font-size: 11px; fill: var(--muted); }
+svg.d .lane { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); letter-spacing: 0.08em; }
+svg.d .node rect { stroke-width: 1.5; transition: stroke-width 0.25s, filter 0.25s, fill 0.25s; }
+svg.d .node.human rect { fill: var(--human-soft); stroke: var(--human); }
+svg.d .node.agent rect { fill: var(--agent-soft); stroke: var(--agent); }
+svg.d .node.harness rect { fill: var(--harness-soft); stroke: var(--harness); }
+svg.d .node.ext rect { fill: var(--ext-soft); stroke: var(--ext); }
+svg.d .node.lit rect { stroke-width: 3; }
+svg.d .node.human.lit rect { filter: drop-shadow(0 0 7px var(--human)); }
+svg.d .node.agent.lit rect { filter: drop-shadow(0 0 7px var(--agent)); }
+svg.d .node.harness.lit rect { filter: drop-shadow(0 0 7px var(--harness)); }
+svg.d .node.ext.lit rect { filter: drop-shadow(0 0 7px var(--ext)); }
+svg.d .node.dim { opacity: 0.45; }
+svg.d .route { fill: none; stroke: var(--line); stroke-width: 1.5; transition: stroke 0.3s, stroke-width 0.3s; }
+svg.d .route.lit { stroke: var(--harness); stroke-width: 2.5; }
+svg.d .route.lit.agentroute { stroke: var(--agent); }
+svg.d .route.lit.humanroute { stroke: var(--human); }
+svg.d .packet { stroke: var(--bg); stroke-width: 2; }
+svg.d .packet.harness { fill: var(--harness); } svg.d .packet.agent { fill: var(--agent); } svg.d .packet.human { fill: var(--human); } svg.d .packet.ext { fill: var(--ext); }
+svg.d .ring { fill: none; stroke-width: 2; opacity: 0; }
+svg.d .ring.go { animation: ring 0.8s ease-out forwards; }
+@keyframes ring { 0% { opacity: 0.9; r: 8; } 100% { opacity: 0; r: 34; } }
+
+.caption { min-height: 3.2em; font-size: 0.98rem; display: flex; gap: 12px; align-items: baseline; }
+.caption .n { font-family: var(--mono); color: var(--harness); flex: none; min-width: 2.2em; }
+
+/* Pipeline conveyor */
+svg.d .st circle.body { fill: var(--card); stroke: var(--line); stroke-width: 2; transition: stroke 0.25s, fill 0.25s, r 0.25s; }
+svg.d .st.done circle.body { fill: var(--harness); stroke: var(--harness); }
+svg.d .st.lit circle.body { stroke: var(--harness); fill: var(--harness-soft); r: 15; filter: drop-shadow(0 0 7px var(--harness)); }
+svg.d .st.stop circle.body { stroke: var(--human); }
+svg.d .st.stop.done circle.body { fill: var(--human); stroke: var(--human); }
+svg.d .st.stop.lit circle.body { fill: var(--human-soft); filter: drop-shadow(0 0 7px var(--human)); }
+svg.d .st text { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+svg.d .st.lit text { fill: var(--fg); font-weight: 500; }
+svg.d .st .tick { fill: #fff; opacity: 0; transition: opacity 0.2s; }
+svg.d .st.done .tick { opacity: 1; }
+svg.d .track { stroke: var(--line); stroke-width: 3; fill: none; }
+svg.d .trackfill { stroke: var(--harness); stroke-width: 3; fill: none; transition: stroke-dashoffset 0.6s ease; }
+.pipe-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 820px) { .pipe-grid { grid-template-columns: 1.25fr 1fr; } }
+.gates { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.gates li { display: flex; gap: 10px; align-items: flex-start; opacity: 0.35; transition: opacity 0.3s; }
+.gates li .chk { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: 11px; color: #fff; margin-top: 3px; transition: background 0.25s, border-color 0.25s; }
+.gates li.pass { opacity: 1; }
+.gates li.pass .chk { background: var(--harness); border-color: var(--harness); }
+.gates li.pass.human .chk { background: var(--human); border-color: var(--human); }
+.ledger { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--mono); font-size: 0.74rem; padding: 3px 8px; border-radius: 6px; background: var(--harness-soft); color: var(--harness); border: 1px solid transparent; animation: chip 0.4s ease; }
+.chip.human { background: var(--human-soft); color: var(--human); }
+.chip.ext { background: var(--ext-soft); color: var(--ext); }
+@keyframes chip { from { opacity: 0; transform: translateY(6px) scale(0.9); } to { opacity: 1; transform: none; } }
+.who { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; padding: 2px 9px; border-radius: 999px; }
+.who.agent { color: var(--agent); background: var(--agent-soft); } .who.human { color: var(--human); background: var(--human-soft); } .who.harness { color: var(--harness); background: var(--harness-soft); }
+.stage-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.stage-head .num { font-family: var(--mono); color: var(--muted); }
+.approve-box { display: none; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-radius: 8px; background: var(--human-soft); }
+.approve-box.show { display: flex; }
+.approve-box code { font-family: var(--mono); font-size: 0.8rem; }
+
+/* Lifecycle */
+svg.d .state rect { fill: var(--card); stroke: var(--line); stroke-width: 1.5; transition: stroke 0.3s, fill 0.3s, filter 0.3s; }
+svg.d .state.lit rect { stroke: var(--harness); fill: var(--harness-soft); stroke-width: 2.5; filter: drop-shadow(0 0 7px var(--harness)); }
+svg.d .state.humanstate.lit rect { stroke: var(--human); fill: var(--human-soft); filter: drop-shadow(0 0 7px var(--human)); }
+svg.d .state.agentstate.lit rect { stroke: var(--agent); fill: var(--agent-soft); filter: drop-shadow(0 0 7px var(--agent)); }
+svg.d .tr { fill: none; stroke: var(--line); stroke-width: 1.5; marker-end: url(#arrow); transition: stroke 0.3s, stroke-width 0.3s; }
+svg.d .tr.lit { stroke: var(--harness); stroke-width: 2.5; }
+svg.d .trlabel { font-size: 10.5px; fill: var(--muted); }
+
+/* Sequence */
+.lanes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+.lanehead { font-family: var(--mono); font-size: 0.74rem; padding: 6px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); min-width: 0; transition: box-shadow 0.3s; }
+.lanehead.agent { border-color: var(--agent); color: var(--agent); } .lanehead.harness { border-color: var(--harness); color: var(--harness); }
+.lanehead.lit { box-shadow: 0 0 0 3px var(--card-2); }
+.msgs { display: grid; gap: 12px; padding-block: 16px; background: repeating-linear-gradient(90deg, transparent 0 calc(12.5% - 1px), var(--line) calc(12.5% - 1px) calc(12.5% + 0px), transparent calc(12.5% + 0px) 25%); }
+.msg { display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; opacity: 0.25; transition: opacity 0.35s; }
+.msg.show { opacity: 1; }
+.msg .arrow { grid-column: var(--from) / var(--to); display: flex; align-items: center; gap: 6px; }
+.msg .arrow .line { flex: 1; height: 2px; background: var(--muted); position: relative; transform: scaleX(0); transform-origin: left; transition: transform 0.5s ease; }
+.msg .arrow.back .line { transform-origin: right; }
+.msg.show .arrow .line { transform: scaleX(1); }
+.msg .arrow .line::after { content: ""; position: absolute; right: -1px; top: -4px; border: 5px solid transparent; border-left-color: var(--muted); }
+.msg .arrow.back .line::after { right: auto; left: -1px; border-left-color: transparent; border-right-color: var(--muted); }
+.msg .arrow .text { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; font-size: 0.8rem; max-width: 62%; }
+.msg.note .arrow .text { border-style: dashed; color: var(--muted); }
+
+/* Evidence chain */
+.chain { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.link { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--card); display: grid; gap: 4px; min-width: 0; opacity: 0.4; transition: border-color 0.35s, opacity 0.35s, box-shadow 0.35s; }
+.link.lit { opacity: 1; }
+.link.lit.digest { border-color: var(--harness); box-shadow: 0 0 0 3px var(--harness-soft); }
+.link.lit.human { border-color: var(--human); box-shadow: 0 0 0 3px var(--human-soft); }
+.link .d { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); word-break: break-all; }
+.link.broken { border-color: var(--danger); background: var(--danger-soft); opacity: 0.8; box-shadow: none; }
+.link.broken .d { color: var(--danger); text-decoration: line-through; }
+
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.tablewrap { overflow-x: auto; }
+.steps { counter-reset: s; display: grid; gap: 12px; }
+.step { display: grid; grid-template-columns: 40px 1fr; gap: 12px; }
+.step::before { counter-increment: s; content: counter(s); font-family: var(--mono); font-size: 1.1rem; color: var(--harness); border: 1px solid var(--line); border-radius: 8px; height: 40px; display: grid; place-items: center; }
+.doclist { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.doclist a { text-decoration: none; color: inherit; }
+.doclist .panel:hover { border-color: var(--muted); }
+footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chip, button.btn.pulse, svg.d .ring.go { animation: none; }
+  .msg .arrow .line, svg.d .node rect, svg.d .trackfill, .link { transition: none; }
+}
+</style>
+
+<nav class="rail" aria-label="Sections">
+  <div class="wrap">
+    <a class="brand" href="#top">Lockstep</a>
+    <a href="#problem">Problem</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#pipeline">Pipeline</a>
+    <a href="#lifecycle">Lifecycle</a>
+    <a href="#handoff">Handoff</a>
+    <a href="#evidence">Evidence</a>
+    <a href="#failures">Failures</a>
+    <a href="#adopt">Adoption</a>
+    <a href="#docs">Docs</a>
+  </div>
+</nav>
+
+<div class="wrap" id="top">
+<header class="hero">
+  <div class="eyebrow">Interactive walkthrough</div>
+  <h1>Lockstep carries a vulnerability fix from ACC to ACS, with evidence at every step.</h1>
+  <p class="lede">A resolved ACC Jira ticket goes in. A review-ready ACS pull request comes out, backed by a reproduced failure, independent reviews, a built artifact, acceptance test results and a human-approved plan. Specialist agents propose. A deterministic worker verifies, gates and records. A human sets the pace.</p>
+  <div class="facts">
+    <div class="fact"><b>11</b><span>stages, one per worker tick</span></div>
+    <div class="fact"><b>8</b><span>read-only specialist profiles</span></div>
+    <div class="fact"><b>22</b><span>gates enforced in code</span></div>
+    <div class="fact"><b>1</b><span>human approval, on an exact digest</span></div>
+    <div class="fact"><b>0</b><span>merges or deployments performed</span></div>
+  </div>
+</header>
+
+<section id="problem">
+  <div class="eyebrow">Problem and aim</div>
+  <div class="two">
+    <div class="panel soft">
+      <h3>What goes wrong today</h3>
+      <p>Two related codebases share a flaw. ACC fixes it and closes the ticket. Someone must now find the real fix commit, decide whether ACS is affected, adapt the patch, prove the hole is closed, get the build and acceptance run done, and open a PR with the right people signed off. Every ticket repeats the same questions. The evidence ends up in heads and chat threads, and an AI assistant that says "ported, tests pass" adds a claim, not proof.</p>
+    </div>
+    <div class="panel soft">
+      <h3>What Lockstep guarantees</h3>
+      <ul class="clean">
+        <li>No file is written until the vulnerability fails in ACS and a human has approved one specific plan digest.</li>
+        <li>Every claim is checked against something the backend can see: Git objects, exit codes, output patterns, job identities, digests.</li>
+        <li>Reviews, QA and jobs bind to the exact source tree and commit. Change the tree and they are revoked together.</li>
+        <li>Side effects are recorded as intent first and reconciled by idempotency key, never replayed blindly.</li>
+        <li>The output is a PR with the full audit trail. Merge and release stay with your process.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="eyebrow">Architecture</div>
+  <h2>Watch one ticket move through the system</h2>
+  <p>Humans decide. Specialists reason over supplied evidence and return typed JSON. One background worker executes stages, applies every change, runs every command and records every result. Press play to follow a single ACC ticket from the first chat message to the published PR. Each packet is a real call or file write in the product.</p>
+  <div class="legend"><span><i class="sw-human"></i>Human</span><span><i class="sw-agent"></i>Agents</span><span><i class="sw-harness"></i>Harness</span><span><i class="sw-ext"></i>Targets and services</span></div>
+  <div class="controls">
+    <button class="btn primary" id="archplay" type="button">Play the journey</button>
+    <button class="btn" id="archnext" type="button">Next step</button>
+    <button class="btn" id="archreset" type="button">Reset</button>
+    <span class="pill" id="archpill">step 0 / 14</span>
+  </div>
+  <div class="stage">
+  <svg class="d" id="arch" viewBox="0 0 980 470" role="img" aria-label="Architecture: human and orchestrator call the MCP server, which shares typed operations and durable state with the CLI and the worker; the worker reads ACC, edits an ACS worktree and calls Jira, Jenkins, AFT and PR connectors.">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+    <text x="100" y="40" text-anchor="middle" class="lane">HUMANS</text>
+    <text x="335" y="40" text-anchor="middle" class="lane">VS CODE COPILOT</text>
+    <text x="570" y="40" text-anchor="middle" class="lane">CONTROL PROJECT</text>
+    <text x="760" y="40" text-anchor="middle" class="lane">WORKER</text>
+    <text x="905" y="40" text-anchor="middle" class="lane">TARGETS</text>
+
+    <g id="routes">
+      <path id="r-ho" class="route humanroute" d="M170 228 C210 228 210 150 250 150"/>
+      <path id="r-om" class="route agentroute" d="M420 140 C450 140 450 85 480 85"/>
+      <path id="r-os" class="route agentroute" d="M335 180 L335 300"/>
+      <path id="r-mp" class="route" d="M570 110 L570 150"/>
+      <path id="r-pt" class="route" d="M570 200 L570 240"/>
+      <path id="r-cp" class="route" d="M570 340 L570 200"/>
+      <path id="r-tw" class="route" d="M660 270 L700 270"/>
+      <path id="r-wa" class="route" d="M820 256 C840 256 840 115 860 115"/>
+      <path id="r-wb" class="route" d="M820 270 L860 270"/>
+      <path id="r-wx" class="route" d="M820 284 C840 284 840 400 860 400"/>
+    </g>
+    <g id="nodes">
+      <g class="node human" id="n-h"><rect x="30" y="200" width="140" height="56" rx="28"/><text x="100" y="224" text-anchor="middle">Human reviewer</text><text x="100" y="241" text-anchor="middle" class="small">approves, accepts PR</text></g>
+      <g class="node agent" id="n-o"><rect x="250" y="120" width="170" height="60" rx="8"/><text x="335" y="145" text-anchor="middle">Orchestrator</text><text x="335" y="162" text-anchor="middle" class="small">Copilot Chat custom agent</text></g>
+      <g class="node agent" id="n-s"><rect x="250" y="300" width="170" height="60" rx="8"/><text x="335" y="325" text-anchor="middle">Specialist subagent</text><text x="335" y="342" text-anchor="middle" class="small">fresh isolated context</text></g>
+      <g class="node harness" id="n-m"><rect x="480" y="60" width="180" height="50" rx="8"/><text x="570" y="90" text-anchor="middle">stdio MCP server</text></g>
+      <g class="node harness" id="n-p"><rect x="480" y="150" width="180" height="50" rx="8"/><text x="570" y="180" text-anchor="middle">Shared typed operations</text></g>
+      <g class="node harness" id="n-t"><rect x="480" y="240" width="180" height="60" rx="8"/><text x="570" y="263" text-anchor="middle">Durable run state</text><text x="570" y="280" text-anchor="middle" class="small">state.json · reports · tasks</text></g>
+      <g class="node harness" id="n-c"><rect x="480" y="340" width="180" height="50" rx="8"/><text x="570" y="370" text-anchor="middle">specify CLI</text></g>
+      <g class="node harness" id="n-w"><rect x="700" y="240" width="120" height="60" rx="8"/><text x="760" y="263" text-anchor="middle">Worker</text><text x="760" y="280" text-anchor="middle" class="small">one stage per tick</text></g>
+      <g class="node ext" id="n-a"><rect x="860" y="90" width="90" height="50" rx="8"/><text x="905" y="110" text-anchor="middle">ACC repo</text><text x="905" y="126" text-anchor="middle" class="small">read only</text></g>
+      <g class="node ext" id="n-b"><rect x="860" y="240" width="90" height="60" rx="8"/><text x="905" y="263" text-anchor="middle">ACS worktree</text><text x="905" y="280" text-anchor="middle" class="small">fix branch</text></g>
+      <g class="node ext" id="n-x"><rect x="860" y="370" width="90" height="60" rx="8"/><text x="905" y="391" text-anchor="middle">Connectors</text><text x="905" y="407" text-anchor="middle" class="small">Jira · Jenkins</text><text x="905" y="421" text-anchor="middle" class="small">AFT · PR</text></g>
+    </g>
+    <text x="760" y="325" text-anchor="middle" class="small">Spec Kit engine: checkpoint and replay</text>
+    <g id="arch-fx"></g>
+  </svg>
+  </div>
+  <div class="caption" id="archcaption"><span class="n">00</span><span>Press play. The journey has fourteen steps and takes about a minute.</span></div>
+</section>
+
+<section id="pipeline">
+  <div class="eyebrow">Process flow</div>
+  <h2>The eleven stages, one per worker tick</h2>
+  <p>A run travels the track. At every stage the worker runs its gates in order and the ledger gains the evidence that stage leaves behind. The track stops at approval, where nothing continues until you press the amber button. That pause is the product's central rule.</p>
+  <div class="controls">
+    <button class="btn primary" id="pipeplay" type="button">Run the pipeline</button>
+    <button class="btn" id="pipenext" type="button">Next stage</button>
+    <button class="btn" id="pipereset" type="button">Reset</button>
+    <span class="pill" id="pipepill">status: queued</span>
+  </div>
+  <div class="stage">
+  <svg class="d" id="pipe" viewBox="0 0 1080 150" role="img" aria-label="Eleven stages on a track: intake, analysis, qa-plan, approval, repair, verification, build, aft, qa-review, publish, done."></svg>
+  </div>
+  <div class="pipe-grid">
+    <div class="panel" id="pipecard"></div>
+    <div class="panel soft">
+      <div class="eyebrow">Evidence ledger</div>
+      <div class="ledger" id="ledger"><span class="muted" style="font-size:0.85rem">Nothing recorded yet.</span></div>
+      <div class="approve-box" id="approvebox">
+        <span>Plan digest <code id="digest">a3f9c1e7…</code> awaits a reviewer.</span>
+        <button class="btn human pulse" id="approvebtn" type="button">Approve this digest</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="lifecycle">
+  <div class="eyebrow">Run lifecycle</div>
+  <h2>Status is separate from stage</h2>
+  <p>A run at stage <span class="mono">approval</span> is <span class="mono">paused</span> until a human decides. A run at <span class="mono">build</span> is <span class="mono">waiting</span> while Jenkins works. The worker skips <span class="mono">awaiting_agent</span> runs until an accepted receipt requeues them. Play a typical run to watch the token travel each transition, or click a state to read what it means.</p>
+  <div class="controls">
+    <button class="btn primary" id="simulate" type="button">Play a typical run</button>
+    <button class="btn" id="simreset" type="button">Reset</button>
+    <span class="pill" id="simstate">state: queued</span>
+  </div>
+  <div class="stage">
+  <svg class="d" viewBox="0 0 960 370" id="sm" role="img" aria-label="Run status state machine with queued, running, awaiting_agent, waiting, paused, completed and cancelled.">
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+    <g id="transitions">
+      <path data-from="queued" data-to="running" class="tr" d="M190 180 L298 180"/>
+      <text x="245" y="170" text-anchor="middle" class="trlabel">worker tick</text>
+      <path data-from="running" data-to="awaiting_agent" class="tr" d="M420 165 C470 125 500 110 538 90"/>
+      <text x="500" y="112" text-anchor="middle" class="trlabel">specialist needed</text>
+      <path data-from="awaiting_agent" data-to="queued" class="tr" d="M540 70 C400 20 200 30 132 158"/>
+      <text x="330" y="44" text-anchor="middle" class="trlabel">receipt accepted</text>
+      <path data-from="running" data-to="waiting" class="tr" d="M420 176 L538 176"/>
+      <text x="480" y="166" text-anchor="middle" class="trlabel">remote job in flight</text>
+      <path data-from="waiting" data-to="running" class="tr" d="M540 196 L422 196"/>
+      <text x="480" y="214" text-anchor="middle" class="trlabel">next poll</text>
+      <path data-from="running" data-to="paused" class="tr" d="M420 200 C470 250 500 262 538 282"/>
+      <text x="468" y="262" text-anchor="middle" class="trlabel">gate failed or human needed</text>
+      <path data-from="paused" data-to="queued" class="tr" d="M540 300 C400 352 200 342 132 202"/>
+      <text x="330" y="340" text-anchor="middle" class="trlabel">resume or approve</text>
+      <path data-from="running" data-to="completed" class="tr" d="M360 160 C360 90 700 60 798 152"/>
+      <text x="650" y="92" text-anchor="middle" class="trlabel">publish done or not affected</text>
+      <path data-from="queued" data-to="cancelled" class="tr" d="M130 200 C130 330 600 342 798 242"/>
+      <path data-from="paused" data-to="cancelled" class="tr" d="M660 290 L798 242"/>
+      <path data-from="waiting" data-to="cancelled" class="tr" d="M660 190 C720 200 760 222 798 237"/>
+      <path data-from="awaiting_agent" data-to="cancelled" class="tr" d="M660 80 C740 110 780 172 798 227"/>
+      <text x="740" y="278" text-anchor="middle" class="trlabel">cancel (jobs and worktree kept)</text>
+    </g>
+    <g id="states" style="cursor:pointer">
+      <g class="state" data-state="queued"><rect x="70" y="160" width="120" height="40" rx="20"/><text x="130" y="185" text-anchor="middle">queued</text></g>
+      <g class="state" data-state="running"><rect x="300" y="160" width="120" height="40" rx="20"/><text x="360" y="185" text-anchor="middle">running</text></g>
+      <g class="state agentstate" data-state="awaiting_agent"><rect x="540" y="60" width="120" height="40" rx="20"/><text x="600" y="85" text-anchor="middle">awaiting_agent</text></g>
+      <g class="state" data-state="waiting"><rect x="540" y="160" width="120" height="40" rx="20"/><text x="600" y="185" text-anchor="middle">waiting</text></g>
+      <g class="state humanstate" data-state="paused"><rect x="540" y="270" width="120" height="40" rx="20"/><text x="600" y="295" text-anchor="middle">paused</text></g>
+      <g class="state" data-state="completed"><rect x="800" y="130" width="120" height="40" rx="20"/><text x="860" y="155" text-anchor="middle">completed</text></g>
+      <g class="state" data-state="cancelled"><rect x="800" y="220" width="120" height="40" rx="20"/><text x="860" y="245" text-anchor="middle">cancelled</text></g>
+    </g>
+    <g id="sm-fx"></g>
+  </svg>
+  </div>
+  <div class="caption" id="simcaption"><span class="n">··</span><span>Click a state or play a run.</span></div>
+</section>
+
+<section id="handoff">
+  <div class="eyebrow">Native Copilot handoff</div>
+  <h2>How a specialist is asked, without the worker launching a model</h2>
+  <p>With <span class="mono">agent: vscode</span> the worker never spawns a model process. It writes a task record, parks the run, and the orchestrator in VS Code dispatches the named specialist in a fresh isolated context. The reply comes back through a validated, idempotent submission. Only the worker consumes it.</p>
+  <div class="controls">
+    <button class="btn primary" id="seqplay" type="button">Play handoff</button>
+    <button class="btn" id="seqreset" type="button">Reset</button>
+  </div>
+  <div class="lanes">
+    <div class="lanehead harness" data-lane="1">Worker</div>
+    <div class="lanehead harness" data-lane="2">MCP server</div>
+    <div class="lanehead agent" data-lane="3">Orchestrator</div>
+    <div class="lanehead agent" data-lane="4">Specialist subagent</div>
+  </div>
+  <div class="msgs" id="msgs">
+    <div class="msg" data-lanes="1,2" style="--from:1;--to:3"><div class="arrow"><span class="text">1. Needs a specialist: saves an AgentTask in state.json, sets <span class="mono">awaiting_agent</span>, checkpoints the engine</span><span class="line"></span></div></div>
+    <div class="msg" data-lanes="2,3" style="--from:2;--to:4"><div class="arrow back"><span class="line"></span><span class="text">2. <span class="mono">next_task</span>: compact reference with prompt, schema and evidence files plus SHA-256 digests</span></div></div>
+    <div class="msg" data-lanes="3,4" style="--from:3;--to:5"><div class="arrow"><span class="text">3. Invokes <span class="mono">remediation-&lt;role&gt;</span> in a fresh isolated context, pointing at the exact files</span><span class="line"></span></div></div>
+    <div class="msg" data-lanes="3,4" style="--from:3;--to:5"><div class="arrow back"><span class="line"></span><span class="text">4. Returns one JSON object matching the schema; read and search tools only</span></div></div>
+    <div class="msg" data-lanes="2,3" style="--from:2;--to:4"><div class="arrow back"><span class="line"></span><span class="text">5. <span class="mono">submit_agent_output</span>: role, schema, freshness and isolation declaration validated; receipt and requeue in one atomic write</span></div></div>
+    <div class="msg note" data-lanes="1,2" style="--from:1;--to:3"><div class="arrow back"><span class="line"></span><span class="text">6. Worker consumes the answer and runs the existing gates. Stale or conflicting duplicates are rejected.</span></div></div>
+  </div>
+</section>
+
+<section id="evidence">
+  <div class="eyebrow">Evidence binding</div>
+  <h2>Nothing is trusted because an agent said it</h2>
+  <p>Each decision is bound to a digest of the exact inputs it was made from, and later stages recheck those digests. Build the chain to see the order in which evidence accrues, then edit the worktree after verification and watch everything downstream being revoked.</p>
+  <div class="controls">
+    <button class="btn primary" id="buildchain" type="button">Build the chain</button>
+    <button class="btn" id="breakchain" type="button">Edit the worktree after verification</button>
+    <button class="btn" id="fixchain" type="button">Reset</button>
+  </div>
+  <div class="chain" id="chain">
+    <div class="link"><b>Upstream fix</b><span class="muted">commit, parent, diff, regression sources matched to ACC Git objects</span></div>
+    <div class="link"><b>Analysis</b><span class="muted">applicability, allowed paths, exposure, adaptation, before/after</span></div>
+    <div class="link"><b>QA plan</b><span class="muted">criterion to local checks to AFT suites, no gaps</span></div>
+    <div class="link"><b>Config snapshot</b><span class="muted">commands, patterns, suites, environment</span></div>
+    <div class="link digest"><b>Plan digest</b><span class="d">sha256(all of the above)</span></div>
+    <div class="link human"><b>Human approval</b><span class="muted">reviewer, exact digest, time</span></div>
+    <div class="link digest downstream"><b>Tree digest</b><span class="d">sha256(worktree contents)</span></div>
+    <div class="link downstream"><b>Code and security reviews</b><span class="muted">bound to the tree digest they inspected</span></div>
+    <div class="link downstream"><b>Commit</b><span class="muted">HEAD must equal recorded commit; tree clean</span></div>
+    <div class="link downstream"><b>Jenkins and AFT</b><span class="muted">job commit, artifact, environment, every suite passed</span></div>
+    <div class="link digest downstream"><b>QA digest</b><span class="d">sha256(commit, plan, verification, build, aft)</span></div>
+    <div class="link downstream"><b>Final QA and PR</b><span class="muted">assessment covers every criterion; PR body carries the report</span></div>
+  </div>
+  <div class="caption" id="chaincaption"><span class="n">··</span><span>Evidence accrues left to right. Each digest freezes everything before it.</span></div>
+</section>
+
+<section id="failures">
+  <div class="eyebrow">Failure handling</div>
+  <h2>Every stop is explicit</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Run status</th><th>Why</th><th>What a human does</th><th>What the tool refuses</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">paused</td><td>A gate failed, a specialist listed blockers or the plan needs approval. <span class="mono">required_action</span> names the condition.</td><td>Fix the cause, then <span class="mono">resume</span>. At approval, <span class="mono">approve</span> with the exact digest.</td><td>Resume cannot approve a plan, reset the two-attempt repair budget or erase a job ID.</td></tr>
+      <tr><td class="mono">waiting</td><td>A Jenkins or AFT job is queued or running. One build slot; another run ready to build is held, not paused.</td><td>Nothing. <span class="mono">status --summary</span> shows who holds the slot.</td><td>No second build is submitted. A failed or timed-out job pauses the run and is retained for inspection.</td></tr>
+      <tr><td class="mono">awaiting_agent</td><td>A native task is pending for a specialist.</td><td>Let the orchestrator dispatch it, or inspect the task files under <span class="mono">native-tasks/</span>.</td><td>Stale, conflicting or out-of-scope submissions are rejected. Other runs are not blocked.</td></tr>
+      <tr><td class="mono">cancelled</td><td>A human cancelled, or a plan was rejected.</td><td>Inspect the retained worktree, logs and remote jobs.</td><td>No PR is published. Remote jobs are not killed.</td></tr>
+      <tr><td>Changed tree</td><td>The worktree changed after verification or approval.</td><td>Review the current diff and approve a fresh plan digest.</td><td>Reviews, QA, job evidence and approval are revoked together, never partially.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Signals to watch: <span class="mono">doctor</span> for a read-only preflight, <span class="mono">status --summary</span> for one row per run, the worker heartbeat with its last advanced run, the JSON-lines worker log and the collapsed timeline in every report.</p>
+</section>
+
+<section id="adopt">
+  <div class="eyebrow">Adoption</div>
+  <h2>Integrating Lockstep in a team</h2>
+  <div class="steps">
+    <div class="step"><div><h3>Decide the operating model</h3><p>An operator runs the worker under a scoped service account on a build box or container. A reviewer from product security approves plans and accepts PRs. The orchestrator is whoever drives it from VS Code or the CLI. The worker needs dedicated clones of ACC and ACS.</p></div></div>
+    <div class="step"><div><h3>Create and configure a control project</h3><p>Run <span class="mono">specify remediation init --no-demo --agent vscode</span>. Fill in repository paths, target branch, test commands, the regression command and its failure pattern, named local checks with passing-test patterns, required acceptance suites and environment, timeouts and the environment allowlist your test runner needs.</p></div></div>
+    <div class="step"><div><h3>Build one connector</h3><p>Write a stdio MCP server implementing the ten operations (ticket read, ticket ensure, fix read, push, PR, build submit and status, AFT submit and status, effect lookup) with idempotency-key lookup. Map them under <span class="mono">servers</span> and <span class="mono">tools</span>. Secrets travel as named environment variables and never reach agents, tests or reports. Run <span class="mono">doctor</span> until it is clean.</p></div></div>
+    <div class="step"><div><h3>Pilot, measure, widen</h3><p>Start with one ACS repository and low-risk tickets. Track time from ACC resolution to ACS PR, pause reasons and repair attempts per ticket. Tighten patterns and checks before adding repositories.</p></div></div>
+  </div>
+  <div class="panel soft">
+    <h3>Say this up front</h3>
+    <ul class="clean">
+      <li>Single-parent fix commits, one build at a time, Copilot only. Checks run on the host OS.</li>
+      <li>Agent profiles and path guards are defense in depth, not a sandbox. Run the worker with least privilege.</li>
+      <li>Human accountability stays: plan approval and PR acceptance are recorded decisions on specific digests. The checklist in every report is unchecked on purpose.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="eyebrow">Documentation map</div>
+  <h2>Where each topic lives in the repository</h2>
+  <div class="doclist">
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/README.md"><div class="panel"><b>README</b><span class="muted">Thesis, quick start, principles, command table</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/docs/architecture.md"><div class="panel"><b>docs/architecture.md</b><span class="muted">Participants, execution and state, evidence binding, specialists</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/docs/harness.md"><div class="panel"><b>docs/harness.md</b><span class="muted">Layers, full gate catalog, failure handling, durability, observability, trust boundaries</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/docs/operations.md"><div class="panel"><b>docs/operations.md</b><span class="muted">Operator guide: commands, preflight checks, troubleshooting, demo scenarios</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/docs/connectors.md"><div class="panel"><b>docs/connectors.md</b><span class="muted">Live service configuration and the connector contract</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/docs/native-copilot.md"><div class="panel"><b>docs/native-copilot.md</b><span class="muted">VS Code subagent protocol and smoke checklist</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/docs/agent-contracts.md"><div class="panel"><b>docs/agent-contracts.md</b><span class="muted">Specialist roles, prompt and output contracts</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/blob/main/docs/roadmap.md"><div class="panel"><b>docs/roadmap.md</b><span class="muted">Done since first release and recommended next steps</span></div></a>
+    <a href="https://github.com/Miraye-M/Lock-Step/tree/main/design"><div class="panel"><b>design/</b><span class="muted">Shared operations, CLI, MCP, workflow step and integration design notes</span></div></a>
+  </div>
+</section>
+
+<footer>Lockstep is derived from GitHub Spec Kit (MIT). The executable remains <span class="mono">specify</span>. Diagrams on this page mirror the Mermaid sources in the repository documentation.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var SVG = "http://www.w3.org/2000/svg";
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var SPEED = reduced ? 0.35 : 1;
+
+  /* ---------- Scene engine ---------- */
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms * SPEED); }); }
+  function ease(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; }
+  function packet(svg, fx, path, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var dur = (opts.dur || 900) * SPEED;
+      var len = path.getTotalLength();
+      var dot = document.createElementNS(SVG, "circle");
+      dot.setAttribute("r", opts.r || 6);
+      dot.setAttribute("class", "packet " + (opts.kind || "harness"));
+      fx.appendChild(dot);
+      path.classList.add("lit");
+      var start = null;
+      function frame(now) {
+        if (!start) start = now;
+        var t = Math.min(1, (now - start) / dur);
+        var d = ease(t) * len;
+        var p = path.getPointAtLength(opts.reverse ? len - d : d);
+        dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+        if (t < 1 && opts.alive()) { requestAnimationFrame(frame); }
+        else { dot.remove(); if (!opts.keepLit) path.classList.remove("lit"); resolve(); }
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+  function ring(fx, x, y, color) {
+    var c = document.createElementNS(SVG, "circle");
+    c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 8);
+    c.setAttribute("class", "ring go"); c.setAttribute("stroke", color);
+    fx.appendChild(c); setTimeout(function () { c.remove(); }, 900);
+  }
+  function center(el) { var r = el.querySelector("rect") || el.querySelector("circle"); if (r.tagName === "circle") return { x: +r.getAttribute("cx"), y: +r.getAttribute("cy") }; return { x: +r.getAttribute("x") + r.getAttribute("width") / 2, y: +r.getAttribute("y") + r.getAttribute("height") / 2 }; }
+  function Scene(steps, onStep) {
+    this.steps = steps; this.onStep = onStep; this.run = 0; this.index = 0; this.playing = false;
+  }
+  Scene.prototype.alive = function (id) { var s = this; return function () { return s.run === id; }; };
+  Scene.prototype.stop = function () { this.run++; this.playing = false; if (this.onStep) this.onStep(this, "stopped"); };
+  Scene.prototype.playFrom = function (start, continuous) {
+    var s = this; s.run++; var id = s.run; s.playing = continuous; s.index = start;
+    if (s.onStep) s.onStep(s, "start");
+    (function next() {
+      if (s.run !== id) return;
+      if (s.index >= s.steps.length) { s.playing = false; if (s.onStep) s.onStep(s, "end"); return; }
+      var i = s.index;
+      if (s.onStep) s.onStep(s, "step", i);
+      Promise.resolve(s.steps[i](s.alive(id))).then(function (holdResult) {
+        if (s.run !== id) return;
+        s.index = i + 1;
+        if (holdResult === "hold") { s.playing = false; if (s.onStep) s.onStep(s, "hold", i); return; }
+        if (continuous) wait(700).then(next); else { s.playing = false; if (s.onStep) s.onStep(s, "paused", i); }
+      });
+    })();
+  };
+
+  /* ---------- Architecture scene ---------- */
+  var arch = document.getElementById("arch");
+  var afx = document.getElementById("arch-fx");
+  var acap = document.getElementById("archcaption");
+  var apill = document.getElementById("archpill");
+  function A(id) { return arch.querySelector("#" + id); }
+  function lit(ids, on) { ids.forEach(function (i) { A(i).classList.toggle("lit", on !== false); }); }
+  function clearArch() { arch.querySelectorAll(".lit").forEach(function (e) { e.classList.remove("lit"); }); afx.innerHTML = ""; }
+  function route(id, kind, reverse, alive, dur) { return packet(arch, afx, A(id), { kind: kind, reverse: reverse, alive: alive, dur: dur, keepLit: true }); }
+  function pulse(id, color) { var c = center(A(id)); ring(afx, c.x, c.y, color); }
+  var HUM = "var(--human)", AGT = "var(--agent)", HAR = "var(--harness)", EXT = "var(--ext)";
+  function say(el, n, text) { el.innerHTML = '<span class="n">' + String(n).padStart(2, "0") + "</span><span>" + text + "</span>"; }
+  var ARCH = [
+    function (alive) { clearArch(); say(acap, 1, "A reviewer asks the orchestrator in Copilot Chat to remediate ticket ACC-101."); lit(["n-h"]); return route("r-ho", "human", false, alive).then(function () { lit(["n-o"]); pulse("n-o", AGT); }); },
+    function (alive) { say(acap, 2, "The orchestrator calls the <b>run</b> tool on the local stdio MCP server. The chat never runs a command itself."); return route("r-om", "agent", false, alive).then(function () { lit(["n-m"]); pulse("n-m", HAR); }); },
+    function (alive) { say(acap, 3, "The MCP adapter maps the request to a shared typed operation, which validates the ticket ID and configuration and writes a durable run to state. The CLI reaches the same operation by the same path."); return route("r-mp", "harness", false, alive, 500).then(function () { lit(["n-p"]); return route("r-pt", "harness", false, alive, 500); }).then(function () { lit(["n-t"]); pulse("n-t", HAR); lit(["n-c"]); return route("r-cp", "harness", false, alive, 600); }); },
+    function (alive) { say(acap, 4, "The operation starts the background worker. It takes the kernel lock, reads the queued run and begins <b>intake</b>, one stage per tick."); return route("r-tw", "harness", false, alive, 500).then(function () { lit(["n-w"]); pulse("n-w", HAR); }); },
+    function (alive) { say(acap, 5, "Intake reads the ticket through the Jira connector, then resolves the fix commit in the read-only ACC clone and matches the connector's diff and regression files against local Git objects."); return route("r-wx", "ext", false, alive).then(function () { lit(["n-x"]); return route("r-wx", "ext", true, alive); }).then(function () { return route("r-wa", "ext", false, alive); }).then(function () { lit(["n-a"]); return route("r-wa", "ext", true, alive); }); },
+    function (alive) { say(acap, 6, "Intake needs the ACC investigator. The worker saves an AgentTask inside state.json, sets <b>awaiting_agent</b> and parks the run. No model process is launched."); return route("r-tw", "harness", true, alive, 500).then(function () { pulse("n-t", AGT); }); },
+    function (alive) { say(acap, 7, "The orchestrator polls <b>next_task</b> and receives a compact reference: prompt, schema and evidence files with SHA-256 digests."); return route("r-om", "agent", false, alive, 600).then(function () { return route("r-mp", "harness", false, alive, 350); }).then(function () { return route("r-pt", "harness", false, alive, 350); }).then(function () { return route("r-pt", "harness", true, alive, 350); }).then(function () { return route("r-mp", "harness", true, alive, 350); }).then(function () { return route("r-om", "agent", true, alive, 600); }); },
+    function (alive) { say(acap, 8, "It dispatches <b>remediation-acc-investigator</b> in a fresh isolated context. The specialist has read and search tools only and returns one JSON object matching the schema."); return route("r-os", "agent", false, alive, 600).then(function () { lit(["n-s"]); pulse("n-s", AGT); return wait(500); }).then(function () { return route("r-os", "agent", true, alive, 600); }).then(function () { lit(["n-s"], false); }); },
+    function (alive) { say(acap, 9, "<b>submit_agent_output</b> validates role, schema, freshness and the isolation declaration, then records the receipt and requeues the run in one atomic write."); return route("r-om", "agent", false, alive, 600).then(function () { return route("r-mp", "harness", false, alive, 350); }).then(function () { return route("r-pt", "harness", false, alive, 350); }).then(function () { pulse("n-t", HAR); }); },
+    function (alive) { say(acap, 10, "The worker consumes the answer and ticks through <b>analysis</b> and <b>qa-plan</b> with two more specialists, then pauses at <b>approval</b> and renders report.md with the plan digest."); return route("r-tw", "harness", false, alive, 500).then(function () { pulse("n-w", HAR); return wait(300); }).then(function () { return route("r-tw", "harness", true, alive, 500); }).then(function () { pulse("n-t", HUM); }); },
+    function (alive) { say(acap, 11, "The reviewer reads the report and approves the exact plan digest through the <b>approve</b> tool. A stale digest is refused; a tool-call confirmation is not an approval."); return route("r-pt", "harness", true, alive, 350).then(function () { return route("r-mp", "harness", true, alive, 350); }).then(function () { return route("r-om", "agent", true, alive, 500); }).then(function () { return route("r-ho", "human", true, alive, 600); }).then(function () { pulse("n-h", HUM); return wait(500); }).then(function () { return route("r-ho", "human", false, alive, 600); }).then(function () { return route("r-om", "agent", false, alive, 500); }).then(function () { return route("r-mp", "harness", false, alive, 350); }).then(function () { return route("r-pt", "harness", false, alive, 350); }).then(function () { pulse("n-t", HAR); }); },
+    function (alive) { say(acap, 12, "<b>repair</b> and <b>verification</b> run inside an isolated ACS worktree: the regression must fail first, the engineer's patch is written only inside the approved paths, then tests, local checks and two independent reviews pass and a commit is made."); return route("r-tw", "harness", false, alive, 500).then(function () { return route("r-wb", "ext", false, alive, 500); }).then(function () { lit(["n-b"]); pulse("n-b", EXT); return route("r-wb", "ext", true, alive, 500); }).then(function () { return route("r-wb", "ext", false, alive, 500); }).then(function () { return route("r-wb", "ext", true, alive, 500); }).then(function () { pulse("n-w", HAR); }); },
+    function (alive) { say(acap, 13, "<b>build</b>, <b>aft</b>, <b>qa-review</b> and <b>publish</b>: push, Jenkins, AFT and the PR are idempotent connector effects. Intent is recorded before each call and reconciled by key after a crash."); return route("r-wx", "ext", false, alive).then(function () { pulse("n-x", EXT); return route("r-wx", "ext", true, alive); }).then(function () { return route("r-wx", "ext", false, alive); }).then(function () { pulse("n-x", EXT); return route("r-wx", "ext", true, alive); }).then(function () { return route("r-tw", "harness", true, alive, 500); }); },
+    function (alive) { say(acap, 14, "Done. The run is <b>completed</b> and the PR carries the diffs, predicted versus observed behavior, timeline and an unchecked acceptance checklist. Merge and release stay with your process."); return route("r-pt", "harness", true, alive, 350).then(function () { return route("r-mp", "harness", true, alive, 350); }).then(function () { return route("r-om", "agent", true, alive, 500); }).then(function () { return route("r-ho", "human", true, alive, 600); }).then(function () { pulse("n-h", HUM); }); }
+  ];
+  var archScene = new Scene(ARCH, function (s, phase, i) {
+    apill.textContent = "step " + Math.min(s.index + (phase === "step" ? 1 : 0), ARCH.length) + " / " + ARCH.length;
+    document.getElementById("archplay").textContent = s.playing ? "Pause" : (s.index >= ARCH.length ? "Replay" : "Play the journey");
+  });
+  document.getElementById("archplay").addEventListener("click", function () {
+    if (archScene.playing) { archScene.stop(); return; }
+    archScene.playFrom(archScene.index >= ARCH.length ? 0 : archScene.index, true);
+  });
+  document.getElementById("archnext").addEventListener("click", function () {
+    archScene.playFrom(archScene.index >= ARCH.length ? 0 : archScene.index, false);
+  });
+  document.getElementById("archreset").addEventListener("click", function () {
+    archScene.stop(); archScene.index = 0; clearArch(); say(acap, 0, "Press play. The journey has fourteen steps and takes about a minute."); apill.textContent = "step 0 / 14";
+    document.getElementById("archplay").textContent = "Play the journey";
+  });
+
+  /* ---------- Pipeline conveyor ---------- */
+  var STAGES = [
+    { id: "intake", status: "running", who: ["acc-investigator", "agent"],
+      does: ["Read the ACC ticket; it must be Closed, Resolved or Done with a fix commit, source paths and a regression test.", "Resolve the fix commit in the ACC clone and the target branch in ACS.", "Fetch fix evidence through the connector and match commit, parent, diff, changed paths and regression files against local Git objects.", "Create or find the ACS Jira ticket as an idempotent effect."],
+      gates: ["Resolved ticket with fix evidence", "Upstream fix verified against Git", "Investigator reports no blockers"],
+      chips: ["acc_revision", "base_revision", "FixEvidence", "ACS ticket"] },
+    { id: "analysis", status: "running", who: ["acs-analyst", "agent"],
+      does: ["Require a clean ACS checkout at the captured base revision.", "Receive applicability, allowed paths, exposure, regression risks, required tests, adaptation notes and before/after impact.", "Validate every allowed path against control-file rules.", "not_affected or already_fixed completes the run here."],
+      gates: ["Clean ACS checkout at base revision", "Applicability decided", "Adaptation and impact present"],
+      chips: ["Analysis", "allowed_paths", "plan digest v1"] },
+    { id: "qa-plan", status: "paused", who: ["qa-engineer", "agent"],
+      does: ["Supply the analysis, fix evidence and configured commands, checks and suites.", "Receive a coverage matrix: each criterion maps to local checks and AFT suites.", "Compute the plan digest and pause for approval."],
+      gates: ["No gaps, unique IDs", "Every analyst-required test covered", "Vulnerability, normal and boundary criteria present", "Only configured checks and suites named"],
+      chips: ["QAPlan", "report.md", "plan digest"] },
+    { id: "approval", status: "paused", who: ["Human reviewer", "human"], stop: true,
+      does: ["The worker waits. A human reads report.md and records approve or reject with the exact plan digest and their name.", "Reject cancels the run. A stale digest is refused."],
+      gates: ["Exact digest match", "Plan still validates", "Fix provenance and impact present"],
+      chips: ["approval {reviewer, digest}"] },
+    { id: "repair", status: "running", who: ["engineer", "agent"],
+      does: ["Create the isolated worktree on branch fix/<run>.", "Run the regression command. It must fail with the configured failure pattern before anything is written.", "Receive a patch as complete file contents; refuse control paths; any path outside the approved scope returns the run to approval.", "Write files atomically. At most two attempts."],
+      gates: ["Regression reproduces first", "Patch within approved scope", "Repair budget not exhausted"],
+      chips: ["worktree", "regression_before", "patch_rationale"] },
+    { id: "verification", status: "running", who: ["verification-reviewer, security-reviewer", "agent"],
+      does: ["Freeze the tree digest, then run regression, tests and every required local check with the allowlisted environment.", "Each check must exit 0, be untruncated and match its passing-test pattern.", "Ask two independent reviewers with the same digest. Any blocking, high or critical finding returns to repair.", "Commit inside allowed paths; recheck the digest after commit."],
+      gates: ["Local checks prove each case", "Source unchanged during tests", "Code review bound to tree digest", "Security review bound to tree digest", "Source unchanged while committing"],
+      chips: ["tree digest", "tests, checks", "review", "security_review", "commit"] },
+    { id: "build", status: "waiting", who: ["Worker only", "harness"],
+      does: ["Push the branch and submit the Jenkins job as idempotent effects.", "Poll the same job each tick. One build slot: other runs ready to build hold until this job terminates.", "Success requires an artifact."],
+      gates: ["Commit identity matches", "Build artifact present", "No timeout or failure"],
+      chips: ["push effect", "build Job", "artifact"] },
+    { id: "aft", status: "waiting", who: ["build-aft-coordinator", "agent"],
+      does: ["Submit the artifact to the configured AFT environment with the required suites.", "Poll until terminal. Every required suite must report passed; skipped is a failure.", "Ask the coordinator for an evidence note; blockers pause."],
+      gates: ["AFT commit, artifact and environment match", "Every required suite passed", "Coordinator reports no blockers"],
+      chips: ["aft Job", "suite results"] },
+    { id: "qa-review", status: "running", who: ["qa-engineer", "agent"],
+      does: ["Compute the QA digest over commit, plan, verification, build and AFT.", "Receive a final assessment bound to that digest; covered criteria must equal the plan's criteria exactly."],
+      gates: ["Final QA assessment approved", "Bound to the QA digest", "Every criterion covered once"],
+      chips: ["QA digest", "QAAssessment"] },
+    { id: "publish", status: "running", who: ["pr-publisher", "agent"],
+      does: ["Recheck approval, reviews, AFT and QA against the current tree.", "Ask the publisher for the narrative; blockers pause.", "Render the report and open the PR as an idempotent effect, with the report as its body."],
+      gates: ["Commit-bound verification", "Current plan approval", "Publisher reports no blockers"],
+      chips: ["pr Record", "report.md final"] },
+    { id: "done", status: "completed", who: ["Human reviewer", "human"],
+      does: ["The run is complete. The PR carries the diffs, predicted versus observed behavior, unknowns, timeline and an unchecked acceptance checklist.", "Merge, rollout and release decisions happen in your normal process."],
+      gates: ["Human acceptance recorded in PR review"],
+      chips: ["state.json", "worker.events.jsonl"] }
+  ];
+  var pipe = document.getElementById("pipe");
+  var pcard = document.getElementById("pipecard");
+  var ledger = document.getElementById("ledger");
+  var ppill = document.getElementById("pipepill");
+  var approvebox = document.getElementById("approvebox");
+  var approvebtn = document.getElementById("approvebtn");
+  var X0 = 50, X1 = 1030, Y = 60;
+  var track = document.createElementNS(SVG, "path"); track.setAttribute("class", "track"); track.setAttribute("d", "M" + X0 + " " + Y + " L" + X1 + " " + Y); pipe.appendChild(track);
+  var trackfill = document.createElementNS(SVG, "path"); trackfill.setAttribute("class", "trackfill"); trackfill.setAttribute("d", "M" + X0 + " " + Y + " L" + X1 + " " + Y); trackfill.setAttribute("stroke-dasharray", X1 - X0); trackfill.setAttribute("stroke-dashoffset", X1 - X0); pipe.appendChild(trackfill);
+  var pfx = document.createElementNS(SVG, "g"); pipe.appendChild(pfx);
+  var pnodes = STAGES.map(function (s, i) {
+    var x = X0 + (X1 - X0) * i / (STAGES.length - 1);
+    var g = document.createElementNS(SVG, "g"); g.setAttribute("class", "st" + (s.stop ? " stop" : "")); g.style.cursor = "pointer";
+    var c = document.createElementNS(SVG, "circle"); c.setAttribute("class", "body"); c.setAttribute("cx", x); c.setAttribute("cy", Y); c.setAttribute("r", 12); g.appendChild(c);
+    var t = document.createElementNS(SVG, "path"); t.setAttribute("class", "tick"); t.setAttribute("d", "M" + (x - 5) + " " + Y + " l3.5 3.5 l7 -7"); t.setAttribute("stroke", "#fff"); t.setAttribute("stroke-width", "2"); t.setAttribute("fill", "none"); g.appendChild(t);
+    var l = document.createElementNS(SVG, "text"); l.setAttribute("x", x); l.setAttribute("y", Y + 36 + (i % 2 ? 16 : 0)); l.setAttribute("text-anchor", "middle"); l.textContent = s.id; g.appendChild(l);
+    g.addEventListener("click", function () { pipeScene.stop(); pipeScene.index = i; renderStage(i, true); });
+    pipe.appendChild(g);
+    return g;
+  });
+  var runner = document.createElementNS(SVG, "circle"); runner.setAttribute("class", "packet harness"); runner.setAttribute("r", 7); runner.setAttribute("cx", X0); runner.setAttribute("cy", Y); pipe.appendChild(runner);
+  function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function renderStage(i, instant) {
+    var s = STAGES[i];
+    pnodes.forEach(function (g, j) { g.classList.toggle("done", j < i); g.classList.toggle("lit", j === i); });
+    trackfill.setAttribute("stroke-dashoffset", (X1 - X0) * (1 - i / (STAGES.length - 1)));
+    runner.setAttribute("cx", X0 + (X1 - X0) * i / (STAGES.length - 1));
+    ppill.textContent = "status: " + s.status; ppill.className = "pill " + s.status;
+    pcard.innerHTML =
+      '<div class="stage-head"><span class="num">' + String(i + 1).padStart(2, "0") + "</span><h3>" + esc(s.id) + '</h3><span class="who ' + s.who[1] + '">' + esc(s.who[0]) + "</span></div>" +
+      '<div class="eyebrow">What the worker does</div><ul class="clean">' + s.does.map(function (w) { return "<li>" + esc(w) + "</li>"; }).join("") + "</ul>" +
+      '<div class="eyebrow">Gates, checked in order</div><ul class="gates">' + s.gates.map(function (g) { return '<li class="' + (s.who[1] === "human" ? "human" : "") + (instant ? " pass" : "") + '"><span class="chk">✓</span><span>' + esc(g) + "</span></li>"; }).join("") + "</ul>";
+    if (instant) { rebuildLedger(i + 1); approvebox.classList.remove("show"); }
+  }
+  function rebuildLedger(upto) {
+    ledger.innerHTML = "";
+    for (var k = 0; k < upto; k++) STAGES[k].chips.forEach(function (c) { addChip(c, STAGES[k].who[1]); });
+    if (!ledger.children.length) ledger.innerHTML = '<span class="muted" style="font-size:0.85rem">Nothing recorded yet.</span>';
+  }
+  function addChip(text, kind) {
+    if (ledger.querySelector(".muted")) ledger.innerHTML = "";
+    var c = document.createElement("span"); c.className = "chip " + (kind === "human" ? "human" : kind === "harness" ? "ext" : ""); c.textContent = text; ledger.appendChild(c);
+  }
+  var PIPE = STAGES.map(function (s, i) {
+    return function (alive) {
+      var from = X0 + (X1 - X0) * Math.max(0, i - 1) / (STAGES.length - 1);
+      var to = X0 + (X1 - X0) * i / (STAGES.length - 1);
+      var seg = document.createElementNS(SVG, "path"); seg.setAttribute("d", "M" + from + " " + Y + " L" + to + " " + Y); seg.setAttribute("fill", "none"); seg.setAttribute("stroke", "none"); pfx.appendChild(seg);
+      pnodes.forEach(function (g, j) { g.classList.toggle("done", j < i); g.classList.remove("lit"); });
+      ppill.textContent = "status: " + (i === 0 ? "queued" : "running"); ppill.className = "pill running";
+      var steps = i === 0 ? Promise.resolve() : packet(pipe, pfx, seg, { kind: s.stop ? "human" : "harness", alive: alive, dur: 700 }).then(function () { seg.remove(); });
+      return steps.then(function () {
+        renderStage(i, false);
+        var gates = pcard.querySelectorAll(".gates li");
+        var p = Promise.resolve();
+        gates.forEach(function (li, k) { p = p.then(function () { return wait(380); }).then(function () { if (alive()) { li.classList.add("pass"); } }); });
+        return p;
+      }).then(function () {
+        if (!alive()) return;
+        s.chips.forEach(function (c) { addChip(c, s.who[1]); });
+        if (s.stop) {
+          ppill.textContent = "status: paused"; ppill.className = "pill paused";
+          approvebox.classList.add("show");
+          // Signal the hold now, while the promise below waits for the click.
+          pipeScene.playing = false; pipeScene.onStep(pipeScene, "hold", i);
+          return new Promise(function (resolve) {
+            approvebtn.onclick = function () { approvebox.classList.remove("show"); addChip("human_approve event", "human"); resolve("hold"); };
+          });
+        }
+        ppill.textContent = "status: " + s.status; ppill.className = "pill " + s.status;
+        return wait(s.status === "waiting" ? 900 : 300);
+      });
+    };
+  });
+  var pipeScene = new Scene(PIPE, function (s, phase, i) {
+    var b = document.getElementById("pipeplay");
+    if (phase === "hold") { b.textContent = "Waiting for approval"; b.disabled = true; return; }
+    b.disabled = false;
+    b.textContent = s.playing ? "Pause" : (s.index >= PIPE.length ? "Run again" : (s.index > 0 ? "Continue" : "Run the pipeline"));
+  });
+  approvebtn.addEventListener("click", function () { setTimeout(function () { if (!pipeScene.playing && pipeScene.index < PIPE.length) pipeScene.playFrom(pipeScene.index, true); }, 400); });
+  function pipeReset() { pipeScene.stop(); pipeScene.index = 0; pfx.innerHTML = ""; pnodes.forEach(function (g) { g.classList.remove("done", "lit"); }); trackfill.setAttribute("stroke-dashoffset", X1 - X0); runner.setAttribute("cx", X0); approvebox.classList.remove("show"); rebuildLedger(0); ppill.textContent = "status: queued"; ppill.className = "pill"; pcard.innerHTML = '<div class="eyebrow">Stage</div><p>Press Run to start at intake, or click a stage on the track to read it.</p>'; document.getElementById("pipeplay").textContent = "Run the pipeline"; }
+  document.getElementById("pipeplay").addEventListener("click", function () {
+    if (pipeScene.playing) { pipeScene.stop(); return; }
+    if (pipeScene.index >= PIPE.length) pipeReset();
+    pipeScene.playFrom(pipeScene.index, true);
+  });
+  document.getElementById("pipenext").addEventListener("click", function () { if (pipeScene.index >= PIPE.length) pipeReset(); pipeScene.playFrom(pipeScene.index, false); });
+  document.getElementById("pipereset").addEventListener("click", pipeReset);
+  pipeReset();
+
+  /* ---------- Lifecycle ---------- */
+  var sm = document.getElementById("sm");
+  var sfx = document.getElementById("sm-fx");
+  var simstate = document.getElementById("simstate");
+  var simcaption = document.getElementById("simcaption");
+  var DESCRIBE = {
+    queued: "queued: created by run, or requeued by resume, approve or an accepted specialist receipt. The worker picks the least recently touched eligible run.",
+    running: "running: the worker is executing one stage under the state lock. Every stage ends in a checkpoint event.",
+    awaiting_agent: "awaiting_agent: a native task is pending. The worker skips this run; only an accepted receipt requeues it. Other runs keep moving.",
+    waiting: "waiting: a Jenkins or AFT job is in flight and polled each tick. State and report are rewritten only when something visible changes.",
+    paused: "paused: a gate failed or a human must act. required_action names the condition. Resume re-runs the same stage; approval needs the exact digest.",
+    completed: "completed: the PR was published, or analysis found ACS not affected or already fixed.",
+    cancelled: "cancelled: local progress stopped. Worktree and remote jobs are kept for inspection; no PR is published."
+  };
+  function stateEl(name) { return sm.querySelector('[data-state="' + name + '"]'); }
+  function transition(from, to) { return sm.querySelector('.tr[data-from="' + from + '"][data-to="' + to + '"]'); }
+  function setState(name, kind) {
+    sm.querySelectorAll(".state").forEach(function (g) { g.classList.toggle("lit", g.dataset.state === name); });
+    sm.querySelectorAll(".tr").forEach(function (p) { p.classList.toggle("lit", p.dataset.from === name); });
+    simstate.textContent = "state: " + name; simstate.className = "pill " + name;
+    var c = center(stateEl(name)); ring(sfx, c.x, c.y, kind === "human" ? "var(--human)" : kind === "agent" ? "var(--agent)" : "var(--harness)");
+  }
+  sm.querySelectorAll(".state").forEach(function (g) {
+    g.addEventListener("click", function () { simScene.stop(); setState(g.dataset.state); say(simcaption, "··", DESCRIBE[g.dataset.state]); });
+  });
+  var SIM = [
+    ["queued", "running", "Tick: intake. The worker reads the ticket and verifies the upstream fix."],
+    ["running", "awaiting_agent", "The investigator is needed. Task saved, run parked. Other runs keep moving."],
+    ["awaiting_agent", "queued", "Receipt accepted through submit_agent_output; the run is requeued."],
+    ["queued", "running", "Tick: analysis, then qa-plan."],
+    ["running", "paused", "QA plan ready. Paused at approval with the plan digest in required_action."],
+    ["paused", "queued", "A human approves the exact digest."],
+    ["queued", "running", "Tick: repair, then verification. Regression fails first, patch applied, checks and reviews pass, commit made."],
+    ["running", "waiting", "Jenkins job submitted. Polled each tick; the build slot is held."],
+    ["waiting", "running", "Build succeeded with an artifact. AFT submitted and passed."],
+    ["running", "completed", "Final QA bound to the QA digest; PR published. Run completed."]
+  ];
+  var simSteps = SIM.map(function (s, i) {
+    return function (alive) {
+      sm.querySelectorAll(".tr").forEach(function (p) { p.classList.remove("lit"); });
+      var tr = transition(s[0], s[1]);
+      var kind = s[1] === "paused" ? "human" : s[1] === "awaiting_agent" ? "agent" : "harness";
+      say(simcaption, i + 1, s[2]);
+      sm.querySelectorAll(".state").forEach(function (g) { g.classList.remove("lit"); });
+      return packet(sm, sfx, tr, { kind: kind, alive: alive, dur: 1000, r: 7 }).then(function () { setState(s[1], kind); return wait(500); });
+    };
+  });
+  var simScene = new Scene(simSteps, function (s) { document.getElementById("simulate").textContent = s.playing ? "Pause" : (s.index >= SIM.length ? "Replay" : "Play a typical run"); });
+  document.getElementById("simulate").addEventListener("click", function () {
+    if (simScene.playing) { simScene.stop(); return; }
+    if (simScene.index >= SIM.length) simScene.index = 0;
+    if (simScene.index === 0) { setState("queued"); say(simcaption, 0, "A run is queued for ticket ACC-101."); }
+    simScene.playFrom(simScene.index, true);
+  });
+  document.getElementById("simreset").addEventListener("click", function () { simScene.stop(); simScene.index = 0; sm.querySelectorAll(".lit").forEach(function (e) { e.classList.remove("lit"); }); sfx.innerHTML = ""; simstate.textContent = "state: queued"; simstate.className = "pill"; say(simcaption, "··", "Click a state or play a run."); document.getElementById("simulate").textContent = "Play a typical run"; });
+
+  /* ---------- Handoff sequence ---------- */
+  var msgs = document.querySelectorAll("#msgs .msg");
+  var heads = document.querySelectorAll(".lanehead");
+  var seqTimer = null;
+  function litLanes(spec) { heads.forEach(function (h) { h.classList.toggle("lit", !!spec && spec.split(",").indexOf(h.dataset.lane) >= 0); }); }
+  function seqReset() { if (seqTimer) { clearTimeout(seqTimer); seqTimer = null; } msgs.forEach(function (m) { m.classList.remove("show"); }); litLanes(null); }
+  function seqPlay() {
+    seqReset();
+    var i = 0;
+    function reveal() { if (i >= msgs.length) { litLanes(null); return; } var m = msgs[i++]; m.classList.add("show"); litLanes(m.dataset.lanes); seqTimer = setTimeout(reveal, 1100 * SPEED); }
+    reveal();
+  }
+  document.getElementById("seqplay").addEventListener("click", seqPlay);
+  document.getElementById("seqreset").addEventListener("click", seqReset);
+  msgs.forEach(function (m) { m.classList.add("show"); });
+
+  /* ---------- Evidence chain ---------- */
+  var links = document.querySelectorAll("#chain .link");
+  var chaincaption = document.getElementById("chaincaption");
+  var chainTimer = null;
+  function chainStop() { if (chainTimer) { clearTimeout(chainTimer); chainTimer = null; } }
+  function chainReset() { chainStop(); links.forEach(function (l) { l.classList.remove("lit", "broken"); }); say(chaincaption, "··", "Evidence accrues left to right. Each digest freezes everything before it."); }
+  function chainBuild() {
+    chainReset(); var i = 0;
+    var NOTES = ["Intake pins the upstream fix to Git objects.", "The analyst's plan names the allowed paths.", "The QA matrix maps every criterion to executable checks.", "The configuration is snapshotted into the run.", "The plan digest freezes all four inputs.", "A human approves that digest by name.", "Verification freezes the worktree contents.", "Both reviewers cite the digest they inspected.", "The commit must match HEAD with a clean tree.", "Jenkins and AFT must report that commit and artifact.", "The QA digest freezes everything so far.", "Final QA covers every criterion; the PR carries the report."];
+    function next() { if (i >= links.length) { say(chaincaption, "··", "Chain complete. Any change to a bound input invalidates everything to its right."); return; } links[i].classList.add("lit"); say(chaincaption, i + 1, NOTES[i]); i++; chainTimer = setTimeout(next, 520 * SPEED); }
+    next();
+  }
+  function chainBreak() {
+    chainStop(); links.forEach(function (l) { l.classList.add("lit"); });
+    var down = Array.prototype.filter.call(links, function (l) { return l.classList.contains("downstream"); });
+    var i = 0;
+    say(chaincaption, "!!", "The worktree HEAD or contents no longer match the recorded commit.");
+    function next() { if (i >= down.length) { say(chaincaption, "!!", "Verification, reviews, QA assessment, build and AFT evidence and the approval are cleared together. An unknown is appended, a fresh plan digest is computed and the run returns to approval."); links[5].classList.add("broken"); return; } down[i++].classList.add("broken"); chainTimer = setTimeout(next, 420 * SPEED); }
+    next();
+  }
+  document.getElementById("buildchain").addEventListener("click", chainBuild);
+  document.getElementById("breakchain").addEventListener("click", chainBreak);
+  document.getElementById("fixchain").addEventListener("click", chainReset);
+  links.forEach(function (l) { l.classList.add("lit"); });
+})();
+</script>

@@ -17,12 +17,14 @@ from .contracts import (
     Result,
     Run,
     RunRequest,
+    RunSummary,
     StartRequest,
+    StatusRequest,
 )
 from .demo import configuration, create_repositories
 from .pack import install
 from .process import git
-from .runtime import event, plan_hash, render_report
+from .runtime import event, held_by, plan_hash, render_report
 from .quality import validate_plan
 from .storage import (
     all_runs,
@@ -162,8 +164,75 @@ def start(request: StartRequest) -> Result:
     )
 
 
+def age_text(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h {seconds % 3600 // 60:02d}m"
+    return f"{seconds // 86400}d {seconds % 86400 // 3600:02d}h"
+
+
+def summarize(runs: list[Run]) -> list[RunSummary]:
+    now = time.time()
+    return [
+        RunSummary(
+            run_id=run.id,
+            ticket_id=run.ticket_id,
+            stage=run.stage,
+            status=run.status,
+            age_seconds=max(0, int(now - run.updated_at)),
+            attempts=run.attempts,
+            required_action=run.required_action,
+            held_by=held_by(run, runs),
+        )
+        for run in runs
+    ]
+
+
+def summary_table(rows: list[RunSummary]) -> str:
+    """One line per run for chat hosts and operators with many runs."""
+    if not rows:
+        return "No runs."
+    header = ("RUN", "TICKET", "STAGE", "STATUS", "AGE", "ACTION")
+    body = []
+    for row in rows:
+        action = row.required_action or ""
+        if row.held_by:
+            action = f"waiting for build slot held by {row.held_by}"
+        if len(action) > 72:
+            action = action[:69] + "..."
+        body.append(
+            (
+                row.run_id,
+                row.ticket_id,
+                row.stage,
+                row.status,
+                age_text(row.age_seconds),
+                action,
+            )
+        )
+    widths = [
+        max(len(line[index]) for line in [header, *body]) for index in range(5)
+    ]
+    return "\n".join(
+        "  ".join(cell.ljust(widths[index]) for index, cell in enumerate(line[:5]))
+        + "  "
+        + line[5]
+        for line in [header, *body]
+    ).rstrip()
+
+
 def status(request: ProjectRequest) -> Result:
-    return Result(runs=all_runs(project(request.project_dir)))
+    runs = all_runs(project(request.project_dir))
+    if isinstance(request, StatusRequest) and request.summary:
+        rows = summarize(runs)
+        return Result(
+            message=summary_table(rows),
+            details={"summary": [row.model_dump() for row in rows]},
+        )
+    return Result(runs=runs)
 
 
 def approve(request: ApprovalRequest) -> Result:

@@ -12,11 +12,13 @@ from pathlib import Path
 from specify_cli.workflows.base import RunStatus
 from specify_cli.workflows.engine import RunState, WorkflowDefinition, WorkflowEngine
 
-from ..contracts import ProjectRequest, RemediationError, Result
+from ..contracts import ProjectRequest, RemediationError, Result, Run
+from ..runtime import build_occupant, held_by
 from ..storage import (
     all_runs,
     atomic_write,
     home,
+    load_run,
     lock,
     project,
     safe_path,
@@ -27,9 +29,19 @@ from ..storage import (
 # proves a process exists, the heartbeat shows that it is still ticking.
 HEARTBEAT_FILE = "worker.heartbeat.json"
 HEARTBEAT_INTERVAL = 1.0
+# One JSON object per line; tailable and filterable, unlike raw process output.
+WORKER_LOG_FILE = "worker.events.jsonl"
+WORKER_LOG_LIMIT = 5_000_000
 
 
-def record_heartbeat(root: Path, *, started_at: float, advanced: bool, ticks: int) -> None:
+def record_heartbeat(
+    root: Path,
+    *,
+    started_at: float,
+    advanced: bool,
+    ticks: int,
+    current: dict | None = None,
+) -> None:
     write_json(
         home(root) / HEARTBEAT_FILE,
         {
@@ -38,8 +50,37 @@ def record_heartbeat(root: Path, *, started_at: float, advanced: bool, ticks: in
             "started_at": started_at,
             "ticks": ticks,
             "last_tick_advanced": advanced,
+            # The most recently advanced run with its resulting stage and status;
+            # kept through idle polls so an operator sees what the worker did last.
+            "last_advanced": current,
         },
     )
+
+
+def log_event(root: Path, record: dict) -> None:
+    """Append one structured line; rotate once instead of growing forever."""
+    path = home(root) / WORKER_LOG_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RemediationError(f"Refusing symlink: {path}")
+    try:
+        if path.exists() and path.stat().st_size > WORKER_LOG_LIMIT:
+            os.replace(path, path.with_suffix(".jsonl.1"))
+    except OSError:
+        pass
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"at": time.time(), "pid": os.getpid(), **record}) + "\n")
+        stream.flush()
+
+
+def current_work(root: Path, run_id: str | None) -> dict | None:
+    if run_id is None:
+        return None
+    try:
+        run = load_run(root, run_id)
+    except RemediationError:
+        return {"run_id": run_id}
+    return {"run_id": run.id, "stage": run.stage, "status": run.status}
 
 
 def heartbeat(root: Path) -> dict | None:
@@ -61,43 +102,48 @@ class RemediationEngine(WorkflowEngine):
         return
 
 
-def tick(root: Path) -> bool:
-    """Run one persisted stage, serially, under the state mutation lock."""
+def poll_cancelled_build(root: Path, run: Run) -> None:
+    """A cancelled run keeps its remote job; poll it so the slot frees honestly."""
+    from ..connectors import connector
+    from ..contracts import Job
+    from ..storage import save_run
+
+    run.build = Job.model_validate(
+        connector(root, run.config).call(
+            "jenkins.status", {"id": run.build.id, "ticket_id": run.ticket_id}
+        )
+    )
+    save_run(root, run)
+
+
+def eligible_runs(runs: list[Run]) -> list[Run]:
+    """Runs the worker may advance now, least recently touched first.
+
+    One Jenkins job at a time: a run that has reached ``build`` waits while
+    another run's job is queued or running, but every other run keeps moving
+    through its local stages. Runs awaiting a specialist are skipped until an
+    accepted receipt requeues them.
+    """
+    candidates = [
+        run
+        for run in runs
+        if run.status in {"queued", "running", "waiting"} and held_by(run, runs) is None
+    ]
+    return sorted(candidates, key=lambda run: (run.updated_at, run.created_at, run.id))
+
+
+def tick(root: Path) -> str | None:
+    """Run one persisted stage under the state lock; return the advanced run ID."""
     root = project(root)
     with lock(root):
-        active = [
-            run
-            for run in all_runs(root)
-            if run.status in {"queued", "running", "waiting", "awaiting_agent"}
-        ]
-        # A previously submitted build owns the slot until handled, even if a
-        # later ticket was queued while it was awaiting operator intervention.
-        occupied = [
-            run
-            for run in all_runs(root)
-            if run.build and run.build.status in {"queued", "running"}
-        ]
-        if occupied:
-            if occupied[0].status == "cancelled":
-                from ..connectors import connector
-                from ..contracts import Job
-                from ..storage import save_run
-
-                cancelled = occupied[0]
-                cancelled.build = Job.model_validate(
-                    connector(root, cancelled.config).call(
-                        "jenkins.status",
-                        {"id": cancelled.build.id, "ticket_id": cancelled.ticket_id},
-                    )
-                )
-                save_run(root, cancelled)
-                return False
-            active = [run for run in active if run.id == occupied[0].id]
+        runs = all_runs(root)
+        occupant = build_occupant(runs)
+        if occupant is not None and occupant.status == "cancelled":
+            poll_cancelled_build(root, occupant)
+        active = eligible_runs(runs)
         if not active:
-            return False
+            return None
         run = active[0]
-        if run.status == "awaiting_agent":
-            return False
         engine = RemediationEngine(root)
         safe_path(root, f".specify/workflows/runs/{run.id}/state.json")
         checkpoint = root / ".specify/workflows/runs" / run.id / "state.json"
@@ -117,7 +163,7 @@ def tick(root: Path) -> bool:
                 }
             )
             engine.execute(definition, run_id=run.id)
-        return True
+        return run.id
 
 
 def serve(request: ProjectRequest, once: bool = False) -> Result:
@@ -130,25 +176,50 @@ def serve(request: ProjectRequest, once: bool = False) -> Result:
         stop = safe_path(root, ".specify/remediation/worker.stop")
         started_at, ticks, last_beat = time.time(), 0, 0.0
         record_heartbeat(root, started_at=started_at, advanced=False, ticks=0)
+        log_event(root, {"event": "worker_started", "poll_seconds": config.poll_seconds})
+        previous_advanced, current = True, None
         try:
             while not stop.exists():
-                advanced = False
+                advanced_run, began = None, time.time()
                 try:
-                    advanced = tick(root)
+                    advanced_run = tick(root)
                 except RemediationError as exc:
                     if "is busy" not in str(exc):
                         raise
                 ticks += 1
-                if advanced or time.time() - last_beat >= HEARTBEAT_INTERVAL:
+                if advanced_run:
+                    current = current_work(root, advanced_run)
+                    log_event(
+                        root,
+                        {
+                            "event": "tick",
+                            "tick": ticks,
+                            **(current or {}),
+                            "elapsed_seconds": round(time.time() - began, 3),
+                        },
+                    )
+                elif previous_advanced:
+                    # Log the start of an idle streak, not every idle poll.
+                    log_event(root, {"event": "idle", "tick": ticks})
+                previous_advanced = bool(advanced_run)
+                if advanced_run or time.time() - last_beat >= HEARTBEAT_INTERVAL:
                     record_heartbeat(
-                        root, started_at=started_at, advanced=advanced, ticks=ticks
+                        root,
+                        started_at=started_at,
+                        advanced=bool(advanced_run),
+                        ticks=ticks,
+                        current=current,
                     )
                     last_beat = time.time()
                 if once:
                     break
                 time.sleep(config.poll_seconds)
         finally:
-            record_heartbeat(root, started_at=started_at, advanced=False, ticks=ticks)
+            # The exit heartbeat keeps naming the last work done.
+            record_heartbeat(
+                root, started_at=started_at, advanced=False, ticks=ticks, current=current
+            )
+            log_event(root, {"event": "worker_stopped", "ticks": ticks})
             (home(root) / "worker.pid").unlink(missing_ok=True)
     return Result(message="Worker stopped.")
 

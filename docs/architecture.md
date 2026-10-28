@@ -46,6 +46,9 @@ flowchart TB
     W --> X
 ```
 
+An interactive version of this page, with the pipeline, lifecycle and handoff
+animated, is [walkthrough.html](walkthrough.html); open it in a browser.
+
 Default `init` creates an offline demo with the deterministic stub. `agent: vscode`
 routes specialist reasoning through durable task handoffs to isolated VS Code
 subagents; `agent: copilot` retains the authenticated CLI dispatcher.

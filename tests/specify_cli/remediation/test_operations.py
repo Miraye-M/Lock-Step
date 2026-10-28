@@ -17,6 +17,7 @@ from specify_cli.remediation.contracts import (
     RemediationError,
     RunRequest,
     StartRequest,
+    StatusRequest,
 )
 from specify_cli.remediation.connectors import MockConnector
 from specify_cli.remediation.pack import install
@@ -383,10 +384,76 @@ def test_build_timeout_preserves_job_id_and_blocks_second_build(project):
     tick(project)
     run = load_run(project, run.id)
     assert run.status == "paused" and "timed out" in run.required_action
+    # Another ticket keeps moving through its local stages while the timed-out
+    # job still holds the single build slot...
     second = create(project, "ACC-102")
-    assert not tick(project)
-    assert load_run(project, second.id).stage == "intake"
+    assert tick(project) == second.id
+    assert load_run(project, second.id).stage != "intake"
+    second = approve(project, advance_to(project, second, "approval"))
+    second = advance_to(project, second, "build")
+    assert second.stage == "build" and second.build is None
+    # ...but it cannot submit a second build until that job terminates.
+    for _ in range(3):
+        assert tick(project) is None
+    second = load_run(project, second.id)
+    assert second.stage == "build" and second.build is None
+    assert second.status in {"queued", "running"} and not second.required_action
     assert load_run(project, run.id).build.id == identifier
+    summary = {
+        row["run_id"]: row
+        for row in ops.status(
+            StatusRequest(project_dir=str(project), summary=True)
+        ).details["summary"]
+    }
+    assert summary[second.id]["held_by"] == run.id
+    assert summary[run.id]["held_by"] is None
+    # Once the first job terminates remotely, the held run submits its own build.
+    scenarios(project)
+    ops.resume(RunRequest(project_dir=str(project), run_id=run.id))
+    assert tick(project) == run.id
+    assert load_run(project, run.id).build.status == "success"
+    assert load_run(project, run.id).build.id == identifier
+    assert tick(project) == second.id
+    second = load_run(project, second.id)
+    assert second.build is not None and second.build.id != identifier
+
+
+def test_awaiting_agent_run_does_not_block_other_tickets(tmp_path):
+    from specify_cli.remediation.vscode_bridge import next_task
+    from specify_cli.remediation.contracts import NextTaskRequest
+
+    root = tmp_path.resolve()
+    ops.initialize(InitRequest(project_dir=str(root), agent="vscode"))
+    first = create(root, "ACC-101")
+    second = create(root, "ACC-102")
+    assert tick(root) == first.id
+    assert load_run(root, first.id).status == "awaiting_agent"
+    task = next_task(NextTaskRequest(project_dir=str(root), run_id=first.id)).task
+    assert task is not None
+    # The second ticket is dispatched instead of the worker idling on the first.
+    assert tick(root) == second.id
+    assert load_run(root, second.id).status == "awaiting_agent"
+    assert tick(root) is None
+    assert load_run(root, first.id).pending_agent_task == task.id
+
+
+def test_cancelled_build_occupant_is_polled_while_others_advance(project):
+    run = approved(project)
+    scenarios(project, build_status="running")
+    run = advance_to(project, run, "build")
+    tick(project)
+    run = load_run(project, run.id)
+    assert run.build.status == "running"
+    ops.cancel(RunRequest(project_dir=str(project), run_id=run.id))
+    second = create(project, "ACC-102")
+    assert tick(project) == second.id
+    assert load_run(project, run.id).status == "cancelled"
+    assert load_run(project, run.id).build.status == "running"
+    # The cancelled run's job is still polled; when it terminates the slot frees.
+    scenarios(project)
+    tick(project)
+    assert load_run(project, run.id).build.status == "success"
+    assert load_run(project, run.id).status == "cancelled"
 
 
 def test_crashed_engine_checkpoint_resumes_domain_without_duplicate_ticket(project):
@@ -503,4 +570,38 @@ def test_report_timeline_collapses_repeated_checkpoints_and_keeps_decisions(proj
     ]
     assert len(waiting) == 1 and waiting[0].rstrip("|").split("|")[-1].strip().isdigit()
     assert int(waiting[0].rstrip("|").split("|")[-1]) >= 4
-    assert len(rows) < len(run.events)
+    # The fold happens when the event is written, so state.json stays small too.
+    folded = [
+        item
+        for item in run.events
+        if item["event"] == "stage_checkpoint"
+        and item.get("stage") == "build"
+        and item.get("status") == "waiting"
+    ]
+    assert len(folded) == 1 and folded[0]["count"] >= 4
+    assert folded[0]["last"] > folded[0]["time"]
+    assert len(rows) == len(run.events)
+
+
+def test_waiting_polls_do_not_rewrite_the_report(project):
+    run = approved(project)
+    scenarios(project, build_status="running")
+    run = advance_to(project, run, "build")
+    tick(project)
+    run = load_run(project, run.id)
+    assert run.status == "waiting" and run.build.status == "running"
+    report = Path(run.worktree).parent / "report.md"
+    before = (report.stat().st_mtime_ns, report.read_bytes())
+    events = len(run.events)
+    for _ in range(3):
+        tick(project)
+    run = load_run(project, run.id)
+    assert run.status == "waiting"
+    assert len(run.events) == events
+    assert (report.stat().st_mtime_ns, report.read_bytes()) == before
+    # A visible change (the job finishing) renders again.
+    scenarios(project)
+    tick(project)
+    run = load_run(project, run.id)
+    assert run.stage == "aft"
+    assert report.stat().st_mtime_ns > before[0]

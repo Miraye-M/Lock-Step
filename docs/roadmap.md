@@ -5,18 +5,20 @@ implemented. Each keeps the product boundary: no merge, no deployment, no
 scheduled discovery, offline demo by default. They are ordered by expected value
 to operators.
 
+Done since the first release: structured worker log, compact status summary,
+heartbeat run context, event folding with render-on-change, an environment
+allowlist for configured commands, and a build slot that holds only the run
+ready to build instead of every other ticket.
+
 ## Operability
 
-1. **Structured worker log.** The worker log is raw process output. Emit one JSON
-   line per tick (time, run, stage, status, elapsed) so the log can be tailed,
-   filtered and correlated with the report timeline.
-2. **Stale-wait alerts.** `doctor` reports how long a run has waited at a human
+1. **Stale-wait alerts.** `doctor` reports how long a run has waited at a human
    or specialist gate. Add configurable thresholds that turn long waits into
-   warnings, and surface them in `status`.
-3. **Compact status view.** `status` returns full run bodies. Add a summary mode
-   (one line per run: stage, status, age, required action) for chat hosts and
-   operators with many runs.
-4. **Run archival.** Completed and cancelled runs accumulate under
+   warnings, and surface them in `status --summary`.
+2. **Poll backoff.** Remote job status is polled every `poll_seconds`. Back off
+   toward a configurable ceiling while a job stays in the same state so live
+   Jenkins and AFT services see fewer identical calls.
+3. **Run archival.** Completed and cancelled runs accumulate under
    `.specify/remediation/runs/`. Add an explicit, opt-in archive operation that
    moves a terminal run and its worktree aside without deleting evidence.
 
@@ -25,13 +27,23 @@ to operators.
 1. **Per-check timeouts and resource limits.** Commands share one
    `command_timeout`. Allow a per-check override and record wall time in the
    evidence so slow or hung checks are visible.
-2. **Coverage of changed lines.** Record which allowed paths the approved tests
+2. **Build and test configuration in scope.** Patches may not touch `.git`,
+   `.specify`, `.github` or `.vscode`, but an approved scope can include test
+   runner or build configuration (for example `conftest.py`, `pytest.ini`,
+   `pyproject.toml`, a Makefile) that changes what the configured checks prove.
+   Flag such paths in the report and the approval `required_action`, or deny them
+   by default behind an explicit configuration allowlist.
+3. **Streaming tree digest.** `working_digest` reads every tracked file into
+   memory as hex and runs several times per stage. Hash files in a stream. The
+   digest value changes, so land it with a digest version so in-flight runs are
+   not revoked.
+4. **Coverage of changed lines.** Record which allowed paths the approved tests
    actually executed (for example through a coverage report the operator
    configures) so QA can see untested edits before approval.
-3. **Reviewer disagreement surfacing.** When the code reviewer and security
+5. **Reviewer disagreement surfacing.** When the code reviewer and security
    reviewer disagree, the report shows both verdicts but does not call out the
    disagreement. Add an explicit section so humans see it at approval.
-4. **Prompt framing hardening.** Wrap evidence in clearly delimited blocks with a
+6. **Prompt framing hardening.** Wrap evidence in clearly delimited blocks with a
    nonce so injected text in tickets or source cannot imitate the runtime
    contract. This changes profile and prompt digests, so it must land with a new
    contract version and not rewrite in-flight tasks.
@@ -60,7 +72,7 @@ to operators.
    with their tests but unused by remediation. Decide whether live connectors
    will need them; otherwise remove them with their tests and record it in
    [migration](migration.md).
-3. **Policy-as-configuration.** Repair attempts, severity thresholds that block,
-   and the result-size budgets are constants. Expose the ones operators need as
-   validated configuration, snapshotted into each run like the rest of the
-   configuration.
+3. **Policy-as-configuration.** Repair attempts (hard-coded as two in three
+   places), severity thresholds that block, and the result-size budgets are
+   constants. Expose the ones operators need as validated configuration,
+   snapshotted into each run like the rest of the configuration.

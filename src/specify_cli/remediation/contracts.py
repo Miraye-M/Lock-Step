@@ -4,7 +4,85 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
+
+# Environment variables handed to configured test, regression and local-check
+# commands. Everything else in the worker's environment, including connector
+# secrets, is withheld from code the agents proposed.
+DEFAULT_COMMAND_ENV = (
+    "PATH",
+    "HOME",
+    "USER",
+    "USERNAME",
+    "LOGNAME",
+    "SHELL",
+    "TERM",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "VIRTUAL_ENV",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "PYTHONIOENCODING",
+    "PYTHONUTF8",
+    "NODE_PATH",
+    "JAVA_HOME",
+    "GOPATH",
+    "GOROOT",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "M2_HOME",
+    "GRADLE_USER_HOME",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "COMMONPROGRAMFILES",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+)
+
+# Additional variables the Copilot CLI dispatcher needs for authentication and
+# its own configuration directories.
+DEFAULT_AGENT_ENV = (
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_HOST",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "XDG_CACHE_HOME",
+)
 
 
 class Contract(BaseModel):
@@ -49,6 +127,13 @@ class Configuration(Contract):
     command_timeout: int = Field(default=120, ge=1, le=7200)
     agent_timeout: int = Field(default=600, ge=1, le=3600)
     copilot_executable: str = "copilot"
+    # Only these variables reach configured commands and local checks; the
+    # Copilot CLI additionally receives agent_env_names. Connector secrets
+    # named under servers[].env_names are never passed to either.
+    command_env_names: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_COMMAND_ENV)
+    )
+    agent_env_names: list[str] = Field(default_factory=lambda: list(DEFAULT_AGENT_ENV))
     servers: dict[str, Server] = Field(default_factory=dict)
     tools: dict[str, ToolBinding] = Field(default_factory=dict)
 
@@ -58,6 +143,30 @@ class Configuration(Contract):
         if not value or any(not item for item in value):
             raise ValueError("At least one nonempty entry is required")
         return value
+
+    @field_validator("command_env_names", "agent_env_names")
+    @classmethod
+    def valid_variable_names(cls, value):
+        for name in value:
+            if not name or "=" in name or "\0" in name:
+                raise ValueError(f"Invalid environment variable name: {name!r}")
+        return value
+
+    @property
+    def secret_env_names(self) -> set[str]:
+        return {name for server in self.servers.values() for name in server.env_names}
+
+    @model_validator(mode="after")
+    def secrets_are_not_forwarded(self):
+        leaked = self.secret_env_names & set(
+            self.command_env_names + self.agent_env_names
+        )
+        if leaked:
+            raise ValueError(
+                "Connector secret variables may not be forwarded to commands or agents: "
+                + ", ".join(sorted(leaked))
+            )
+        return self
 
 
 class Ticket(Contract):
@@ -260,6 +369,24 @@ class Run(Contract):
 
 class ProjectRequest(Contract):
     project_dir: str
+
+
+class StatusRequest(ProjectRequest):
+    # summary returns one compact row per run in details and a text table in
+    # message instead of full run bodies.
+    summary: bool = False
+
+
+class RunSummary(Contract):
+    run_id: str
+    ticket_id: str
+    stage: str
+    status: str
+    age_seconds: int = Field(ge=0)
+    attempts: int = Field(ge=0)
+    required_action: str | None = None
+    # Set while the run is ready to build but another run holds the build slot.
+    held_by: str | None = None
 
 
 class InitRequest(ProjectRequest):

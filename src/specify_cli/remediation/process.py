@@ -11,12 +11,27 @@ from .contracts import RemediationError
 
 
 def execute(
-    argv: list[str], cwd: Path, timeout: int = 120, *, separate_stderr: bool = False
+    argv: list[str],
+    cwd: Path,
+    timeout: int = 120,
+    *,
+    separate_stderr: bool = False,
+    env_names: list[str] | None = None,
 ) -> dict:
+    """Run argv with bounded output.
+
+    ``env_names`` restricts the child's environment to the named variables; the
+    worker's own Git and diagnostic commands pass None and inherit everything.
+    """
     if not argv or any(not isinstance(arg, str) or "\0" in arg for arg in argv):
         raise RemediationError("Invalid command argv")
+    inherited = (
+        dict(os.environ)
+        if env_names is None
+        else {name: os.environ[name] for name in env_names if name in os.environ}
+    )
     environment = {
-        **os.environ,
+        **inherited,
         "GIT_TERMINAL_PROMPT": "0",
         "PYTHONDONTWRITEBYTECODE": "1",
     }

@@ -17,21 +17,24 @@ def timeline(run: Run) -> list[str]:
     """
     rows: list[dict] = []
     for item in run.events:
+        # Events written by runtime.event may already carry a fold count.
         details = {
             key: value
             for key, value in item.items()
-            if key not in {"event", "time"}
+            if key not in {"event", "time", "count", "last"}
         }
+        count = int(item.get("count", 1))
+        last = item.get("last", item["time"])
         if rows and rows[-1]["event"] == item["event"] and rows[-1]["details"] == details:
-            rows[-1]["count"] += 1
-            rows[-1]["last"] = item["time"]
+            rows[-1]["count"] += count
+            rows[-1]["last"] = last
             continue
         rows.append(
             {
                 "event": item["event"],
                 "first": item["time"],
-                "last": item["time"],
-                "count": 1,
+                "last": last,
+                "count": count,
                 "details": details,
             }
         )

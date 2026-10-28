@@ -24,6 +24,14 @@ from .prompts import build_prompt, profile
 from .storage import digest, safe_path, save_run
 
 
+def agent_env_names(run: Run) -> list[str]:
+    """Variables the Copilot CLI may see: command set plus agent set, no secrets."""
+    secrets = run.config.secret_env_names
+    return sorted(
+        set(run.config.command_env_names + run.config.agent_env_names) - secrets
+    )
+
+
 def ask(
     root: Path, run: Run, role: str, schema: type[BaseModel], evidence: dict
 ) -> BaseModel:
@@ -280,6 +288,7 @@ def _ask(
             argv,
             Path(run.worktree or run.config.acs_repo),
             run.config.agent_timeout,
+            env_names=agent_env_names(run),
         )
         if response["exit_code"] or response["truncated"]:
             raise RemediationError(

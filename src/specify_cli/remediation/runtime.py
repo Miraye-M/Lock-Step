@@ -74,10 +74,71 @@ def plan_hash(run: Run) -> str:
     )
 
 
+# Bookkeeping keys on a collapsed event; everything else is the event's identity.
+EVENT_META = frozenset({"event", "time", "count", "last"})
+
+
 def event(root: Path, run: Run, name: str, **details) -> None:
+    """Record an event, folding a repeat of the previous one into a count.
+
+    A waiting run checkpoints every poll; without folding, a two-hour build at
+    the default interval adds more than a thousand identical rows to state.json.
+    """
     run.updated_at = time.time()
-    run.events.append({"event": name, "time": run.updated_at, **details})
+    last = run.events[-1] if run.events else None
+    if (
+        last
+        and last["event"] == name
+        and {key: value for key, value in last.items() if key not in EVENT_META}
+        == details
+    ):
+        last["count"] = last.get("count", 1) + 1
+        last["last"] = run.updated_at
+    else:
+        run.events.append({"event": name, "time": run.updated_at, **details})
     save_run(root, run)
+
+
+def command_env_names(run: Run) -> list[str]:
+    """Variables configured tests and checks may see; connector secrets never."""
+    return sorted(set(run.config.command_env_names) - run.config.secret_env_names)
+
+
+def build_occupant(runs: list[Run]) -> Run | None:
+    """The run whose submitted Jenkins job holds the single build slot, if any."""
+    return next(
+        (
+            run
+            for run in runs
+            if run.build and run.build.status in {"queued", "running"}
+        ),
+        None,
+    )
+
+
+def held_by(run: Run, runs: list[Run]) -> str | None:
+    """Return the occupant's ID when this run is ready to build but must wait."""
+    occupant = build_occupant(runs)
+    if (
+        occupant is not None
+        and occupant.id != run.id
+        and run.stage == "build"
+        and run.build is None
+        and run.status in {"queued", "running"}
+    ):
+        return occupant.id
+    return None
+
+
+def report_signature(run: Run) -> tuple:
+    """What a report reader can see change between two polls of the same job."""
+    return (
+        run.stage,
+        run.status,
+        run.required_action,
+        run.build.status if run.build else None,
+        run.aft.status if run.aft else None,
+    )
 
 
 def require_clear_note(run: Run, role: str) -> None:
@@ -214,8 +275,10 @@ def advance(root: Path, run: Run) -> None:
     """Advance one stage. The caller holds the project state lock."""
     if run.status in {"paused", "completed", "cancelled", "awaiting_agent"}:
         return
+    before = report_signature(run)
     run.status, run.required_action = "running", None
     service = connector(root, run.config)
+    env_names = command_env_names(run)
     try:
         if run.stage == "intake":
             ticket = Ticket.model_validate(
@@ -385,7 +448,10 @@ def advance(root: Path, run: Run) -> None:
             install(worktree, root)
             if run.regression_before is None:
                 run.regression_before = execute(
-                    run.config.regression_command, worktree, run.config.command_timeout
+                    run.config.regression_command,
+                    worktree,
+                    run.config.command_timeout,
+                    env_names=env_names,
                 )
                 event(root, run, "regression_before")
             if (
@@ -480,10 +546,15 @@ def advance(root: Path, run: Run) -> None:
                 and run.verification.get("prepared_tree_digest") == before_tree
             ):
                 regression = execute(
-                    run.config.regression_command, worktree, run.config.command_timeout
+                    run.config.regression_command,
+                    worktree,
+                    run.config.command_timeout,
+                    env_names=env_names,
                 )
                 tests = [
-                    execute(argv, worktree, run.config.command_timeout)
+                    execute(
+                        argv, worktree, run.config.command_timeout, env_names=env_names
+                    )
                     for argv in run.config.test_commands
                 ]
                 checks = {
@@ -491,6 +562,7 @@ def advance(root: Path, run: Run) -> None:
                         run.config.local_checks[name].argv,
                         worktree,
                         run.config.command_timeout,
+                        env_names=env_names,
                     )
                     for name in required_checks(run)
                 }
@@ -766,7 +838,10 @@ def advance(root: Path, run: Run) -> None:
     except (RemediationError, ValueError, OSError) as exc:
         run.status, run.required_action = "paused", str(exc)
     event(root, run, "stage_checkpoint", stage=run.stage, status=run.status)
-    render_report(root, run)
+    # Polling an unchanged remote job changes nothing a reader can see; skip
+    # rewriting a report that embeds both diffs on every tick.
+    if run.status != "waiting" or report_signature(run) != before:
+        render_report(root, run)
 
 
 def validate_source_path(root: Path, name: str) -> Path:

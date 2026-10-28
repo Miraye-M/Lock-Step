@@ -30,7 +30,9 @@ evidence. Read local report files for large evidence sets.
 
 Starting a run returns identifiers immediately and starts the shared background
 worker when requested. A chat ending does not end execution. Status identifies
-stage, required action and evidence. Human approval must explicitly name the
+stage, required action and evidence; `{"summary": true}` returns one typed row
+per run in `details.summary` with a text table in `message`, which chat hosts
+should prefer when many runs exist. Human approval must explicitly name the
 recorded plan digest; a tool-call confirmation cannot substitute for that decision.
 
 ## Validation
